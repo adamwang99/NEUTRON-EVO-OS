@@ -25,11 +25,61 @@ npm run compile
 # Press F5 to debug
 ```
 
-### Publish to Open VSX
+### Install from Open VSX
+
+1. Open VS Code
+2. Go to Extensions
+3. Search for "AI Context Master" (after publishing)
+4. Click Install
+
+## Publishing to Open VSX
+
+### Prerequisites
+
+1. Create account at [open-vsx.org](https://open-vsx.org)
+2. Register as a publisher
+
+### Steps to Publish
 
 ```bash
+# 1. Install vsce
 npm install -g @vscode/vsce
-vsce package
+
+# 2. Login to Open VSX
+vsce login ai-context-master
+
+# 3. Publish (one-time or update)
+vsce publish --provider openvsx
+```
+
+### First-time Publisher Setup
+
+1. Go to [open-vsx.org](https://open-vsx.org)
+2. Click "Register" to create account
+3. Go to "My Account" → "Create Namespace"
+4. Create namespace: `ai-context-master`
+5. Use the same name in `vsce login ai-context-master`
+
+### Update Extension
+
+```bash
+# Update version in package.json, then:
+vsce publish --provider openvsx
+```
+
+## Development
+
+```bash
+# Install dependencies
+npm install
+
+# Compile TypeScript
+npm run compile
+
+# Package as VSIX
+npx vsce package
+
+# Publish
 vsce publish --provider openvsx
 ```
 
