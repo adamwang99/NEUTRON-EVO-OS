@@ -52,8 +52,8 @@ export function activate(extContext: vscode.ExtensionContext) {
 	const setupCmd = vscode.commands.registerCommand('ai-context-master.setup', quickSetup);
 	const openDocsCmd = vscode.commands.registerCommand('ai-context-master.openDocs', openDocumentation);
 
-	// Listen for workspace folder opened
-	vscode.workspace.onDidOpenWorkspaceFolder(handleWorkspaceOpen);
+	// Listen for workspace folder changes
+	vscode.workspace.onDidChangeWorkspaceFolders(handleWorkspaceChange);
 
 	// Auto-inject on startup if enabled
 	setTimeout(autoInjectIfEnabled, 2000);
@@ -81,7 +81,7 @@ async function autoInjectIfEnabled() {
 	}
 }
 
-async function handleWorkspaceOpen(folder: vscode.WorkspaceFolder) {
+async function handleWorkspaceChange(event: vscode.WorkspaceFoldersChangeEvent) {
 	const config = vscode.workspace.getConfiguration('aiContextMaster');
 	const enabled = config.get<boolean>('enabled', true);
 	const autoInject = config.get<boolean>('autoInject', true);
@@ -90,7 +90,10 @@ async function handleWorkspaceOpen(folder: vscode.WorkspaceFolder) {
 		return;
 	}
 
-	await injectTemplate(folder.uri.fsPath);
+	// Handle added folders
+	for (const folder of event.added) {
+		await injectTemplate(folder.uri.fsPath);
+	}
 }
 
 async function injectTemplate(workspacePath: string): Promise<boolean> {
