@@ -25,9 +25,23 @@
 
 #### ✏️ Modification Protocol
 - ALWAYS test in staging environment FIRST
-- NEVER modify without backup
+- **MANDATORY: Backup BEFORE any modification**
+  - For file changes: Copy original file to `.backup/` folder BEFORE editing
+  - Format: `YYYY-MM-DD_HH-MM-SS_original-filename.backup`
+- NEVER modify without backup (this is CRITICAL)
 - Document change reason in commit message
 - Update CHANGELOG.md with change summary
+
+#### 💾 File Backup Rule (CRITICAL)
+**Agent MUST do this BEFORE any file edit:**
+```
+1. COPY file → .backup/filename.timestamp.ext
+2. THEN edit the file
+```
+
+Example:
+- Before editing `src/api.ts` → First copy to `.backup/src/api.ts.2026-03-17.backup`
+- This applies to ALL files: .ts, .js, .json, .md, .py, etc.
 
 ---
 
