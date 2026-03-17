@@ -62,6 +62,9 @@ $settings["claude-code.parallelTasks"] = $true
 # Auto-approve settings (skip permission prompts)
 $settings["claude-code.allowWarnings"] = $true
 $settings["claude-code.autoApprove"] = $true
+$settings["claudeCode.autoApproveEdit"] = $true
+$settings["claudeCode.autoApproveDelete"] = $true
+$settings["claudeCode.autoApproveCreate"] = $true
 
 # Write settings
 $json = $settings | ConvertTo-Json -Depth 10
