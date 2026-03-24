@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>AI Context Master</title>
+    <meta http-equiv="Content-Security-Policy" content="script-src 'self' 'unsafe-inline';">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <h1>AI Context Master</h1>
+
+        <div id="step-1" class="step-content">
+            <h2>Bước 1: Khởi tạo Nhiệm vụ</h2>
+            <div class="form-group">
+                <label for="project-path">Đường dẫn dự án:</label>
+                <input type="text" id="project-path" name="project-path" placeholder="VD: E:\Projects\MyAwesomeApp">
+            </div>
+            <div class="form-group">
+                <label for="task-name">Tên nhiệm vụ:</label>
+                <input type="text" id="task-name" name="task-name" placeholder="VD: Thêm tính năng đăng nhập">
+            </div>
+            <div class="form-group">
+                <label for="task-desc">Mô tả yêu cầu chính:</label>
+                <textarea id="task-desc" name="task-desc" rows="4"></textarea>
+            </div>
+        </div>
+
+        <div id="step-2" class="step-content" style="display: none;">
+            <h2>Bước 2: Bối cảnh & Logic</h2>
+            <div class="form-group">
+                <label for="core-logic">Logic nghiệp vụ cốt lõi:</label>
+                <textarea id="core-logic" name="core-logic" rows="4" placeholder="VD: Chỉ admin mới thấy nút X..."></textarea>
+            </div>
+            <div class="form-group">
+                <label for="related-files">Các tệp/thư mục quan trọng:</label>
+                <textarea id="related-files" name="related-files" rows="4" placeholder="VD: src/controllers/user.js..."></textarea>
+            </div>
+        </div>
+
+        <div id="step-3" class="step-content" style="display: none;">
+            <h2>Bước 3: Lính gác (Guardrails)</h2>
+            <div class="form-group checkbox-group">
+                <input type="checkbox" id="backup-confirm" name="backup-confirm">
+                <label for="backup-confirm">Tôi xác nhận đã sao lưu / commit dự án.</label>
+            </div>
+            <div class="form-group">
+                <label for="guard-functions">Các chức năng đang chạy tốt (AI không được làm hỏng):</label>
+                <textarea id="guard-functions" name="guard-functions" rows="3" placeholder="VD: Chức năng đăng ký, API /v1/users"></textarea>
+            </div>
+            <div class="form-group checkbox-group">
+                <input type="checkbox" id="check-syntax" name="check-syntax" checked>
+                <label for="check-syntax">Yêu cầu AI kiểm tra lại cú pháp (syntax).</label>
+            </div>
+            <div class="form-group checkbox-group">
+                <input type="checkbox" id="check-logic" name="check-logic" checked>
+                <label for="check-logic">Yêu cầu AI kiểm tra lại logic tổng thể.</label>
+            </div>
+        </div>
+
+        <div id="step-4" class="step-content" style="display: none;">
+            <h2>Bước 4: Hoàn tất</h2>
+            <p>Sẵn sàng để tạo file mô tả nhiệm vụ.</p>
+            <button id="btn-generate" class="btn-primary">Tạo File Mô tả (.md)</button>
+        </div>
+
+        <div class="navigation-buttons">
+            <button id="btn-back" disabled>Quay lại</button>
+            <button id="btn-next">Tiếp theo</button>
+        </div>
+    </div>
+
+    <script src="./renderer.js"></script>
+</body>
+</html>

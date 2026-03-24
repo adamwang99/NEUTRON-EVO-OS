@@ -1,0 +1,13 @@
+{
+  "name": "ai-context-master",
+  "version": "0.2.0",
+  "main": "main.js",
+  "description": "Trợ lý tạo bối cảnh cho AI Coder",
+  "scripts": {
+    "start": "electron ."
+  },
+  "devDependencies": {
+    "electron": "^28.0.0"
+  },
+  "dependencies": {}
+}

@@ -29,3 +29,6 @@ MemoryOS/.memoryos/config.json
 
 # Context export (local only - do not push)
 context-export/
+
+# Claude Code local config
+.claude/
