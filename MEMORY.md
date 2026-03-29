@@ -1,4 +1,4 @@
-# MEMORY.md - Long-term Knowledge
+# MEMORY.md - NEUTRON EVO OS Long-term Knowledge
 
 ## Memory Stack Files
 
@@ -19,7 +19,7 @@
 | MemoryOS/ | Full Memory OS | - |
 | .claude/agents/ | Subagents | - |
 | ULTIMATE_PROMPT.md | Agent Factory Prompt | - |
-| AI_CONTEXT_MASTER.md | System Prompt for AI Agents ⭐ NEW | - |
+| NEUTRON_EVO_OS.md | System Prompt for AI Agents | - |
 
 ---
 
@@ -198,6 +198,8 @@ Layer 9: memory/         → Daily logs
 Layer 10: MemoryOS/     → Full memory OS
 Layer 11: .claude/agents/ → Subagents
 Layer 12: ULTIMATE_PROMPT.md → Agent Factory
+Layer 13: MANIFESTO.md → ∫f(t)dt philosophy
+Layer 14: PERFORMANCE_LEDGER.md → CI tracking
 ```
 
 **Installation:**

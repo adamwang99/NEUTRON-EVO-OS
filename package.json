@@ -1,8 +1,8 @@
 {
-  "name": "ai-context-master",
-  "version": "0.2.0",
+  "name": "neutron-evo-os",
+  "version": "4.0.0",
   "main": "main.js",
-  "description": "Trợ lý tạo bối cảnh cho AI Coder",
+  "description": "NEUTRON EVO OS - Sovereign Intelligence Operating System: Memory Stack, Skill Router, Dream Cycle",
   "scripts": {
     "start": "electron ."
   },

@@ -1,12 +1,12 @@
 #!/bin/bash
-# Apply AI Context Master to current project
+# Apply NEUTRON EVO OS to current project
 # Usage: ./apply-context.sh
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 echo ""
 echo "========================================"
-echo "  Apply AI Context Master to this project"
+echo "  Apply NEUTRON EVO OS to this project"
 echo "========================================"
 echo ""
 

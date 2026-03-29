@@ -1,41 +1,24 @@
-# User Preferences
+# USER.md - Adam Wang Preferences
 
-> User-specific preferences and settings
+## User Profile
+- **Name**: Adam Wang (Vương Hoàng Tuấn)
+- **Working context**: Development, trading, automation, AI agent systems
 
----
+## Preferences
+- **Language**: Vietnamese (primary), English (technical)
+- **Communication**: Direct, practical, results-oriented
+- **Code style**: Clean, well-documented, modern
+- **Feedback**: Quick iterations, show progress
 
-## Communication Style
+## Current Projects
+- NEUTRON EVO OS v4.0.0 development
+- Trading system development
+- Claude Code integration
+- AI agent skill architecture
+- VS Code workflow optimization
 
-- **Language**: Vietnamese (default), English when needed
-- **Tone**: Professional but friendly
-- **Detail Level**: Provide enough context, avoid overwhelming
-
----
-
-## Work Preferences
-
-- **Code Style**: Clean, readable, well-commented
-- **File Organization**: Logical structure
-- **Testing**: Include tests when appropriate
-- **Documentation**: Clear and concise
-
----
-
-## Technical Preferences
-
-- Use modern best practices
-- Prefer TypeScript over JavaScript
-- Use functional components for React
-- Follow SOLID principles
-
----
-
-## Feedback Preferences
-
-- Let me know if something isn't working
-- Feel free to ask for clarification
-- Suggest improvements anytime
-
----
-
-*This file defines user-specific preferences*
+## Important Notes
+- Prefers actionable solutions over lengthy explanations
+- Values efficiency and automation
+- Interested in AI/agent workflows, meritocracy, sovereignty
+- ∫f(t)dt philosophy: accumulation of functional value over time

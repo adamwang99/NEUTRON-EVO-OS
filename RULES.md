@@ -1,8 +1,7 @@
-# RULES.md - Agent Operating Rules
+# RULES.md - NEUTRON EVO OS Operating Rules
 
-> Extracted from `RULE for CODING/Singler Agent/SYSTEM_PROMPT_BASE.txt`
-> Combined with Parallel Coding Workflow
-> Last Updated: 2026-03-10
+> Governed by SOUL.md and MANIFESTO.md
+> Last Updated: 2026-03-30
 
 ---
 
@@ -10,27 +9,26 @@
 
 ### Data Handling
 
-#### 📋 Backup Protocol
-- **AUTOMATIC** backup BEFORE any data modification or deletion
-- Filename format: `YYYY-MM-DD_HH-MM-SS_MODULE_v[version].backup`
-- Storage: `/backups/` (local) + Cloud backup
-- Keep minimum 3 most recent versions
+#### 📋 Archive Protocol (NEUTRON EVO OS)
+- **MANDATORY** archive BEFORE any data modification or deletion
+- User-data logs are **NEVER DELETED** — move to `/memory/archived/`
+- Filename format for archive: `YYYY-MM-DD_HH-MM-SS_module.original_name`
+- Storage: `/memory/archived/` (local) + Cloud backup
+- Keep minimum 7 most recent versions
 - Delete old backups after 30 days
 
 #### 🗑️ Deletion Protocol
-- **SOFT DELETE FIRST**: Mark as "deleted" instead of physical removal
-- Wait 7 days before permanent deletion
-- Require approval if deleting > 100 records
-- Mandatory audit log: timestamp, user_id, reason, rows_affected, backup_location
+- **SOFT DELETE FIRST**: Mark as "archived" instead of physical removal
+- User data: **ALWAYS** move to `/memory/archived/` (NEVER delete)
+- System noise (.tmp, .cache): Permanent delete allowed after 3 days unreferenced
+- Require approval if deleting > 10 files simultaneously
+- Mandatory audit log: timestamp, reason, files_affected, archive_location
 
 #### ✏️ Modification Protocol
 - ALWAYS test in staging environment FIRST
-- **MANDATORY: Backup BEFORE any modification**
-  - For file changes: Copy original file to `.backup/` folder BEFORE editing
-  - Format: `YYYY-MM-DD_HH-MM-SS_original-filename.backup`
-- NEVER modify without backup (this is CRITICAL)
+- **MANDATORY**: Archive BEFORE any modification
 - Document change reason in commit message
-- Update CHANGELOG.md with change summary
+- Update PERFORMANCE_LEDGER.md with CI delta
 
 #### 💾 File Backup Rule (CRITICAL)
 **Agent MUST do this BEFORE any file edit:**
@@ -39,13 +37,82 @@
 2. THEN edit the file
 ```
 
-Example:
-- Before editing `src/api.ts` → First copy to `.backup/src/api.ts.2026-03-17.backup`
-- This applies to ALL files: .ts, .js, .json, .md, .py, etc.
+---
+
+## Part 2: 5-Step Workflow
+
+```
+/explore  → Audit, route, plan
+/spec     → Define spec with acceptance criteria
+/build    → Implement against spec
+/verify   → Validate, test, check for Model Slop
+/ship     → Update ledger, log, deliver
+```
+
+### /explore
+1. Read SOUL.md, MANIFESTO.md, USER.md
+2. Audit PERFORMANCE_LEDGER.md for relevant CI scores
+3. Route to appropriate skills via `engine/expert_skill_router.py`
+4. Identify skill dependencies and blockers
+5. Never proceed if CI audit fails (CI < 30 blocked until review)
+
+### /spec
+1. Write formal specification
+2. Define measurable acceptance criteria
+3. Identify constraints, risks, and edge cases
+4. Reference SOUL.md principles throughout
+5. Get human approval if > 10 file changes or new dependencies
+
+### /build
+1. Implement against spec — no scope creep
+2. Follow DESIGN_SYSTEM.md for UI tasks
+3. Archive before any deletion (move to `/memory/archived/`)
+4. Log progress incrementally to `/memory/YYYY-MM-DD.md`
+5. Never generate Model Slop (see Part 3)
+
+### /verify
+1. Validate output against acceptance criteria in /spec
+2. Run unit/integration tests
+3. Check for Model Slop: is output repetitive, hallucinated, or hollow?
+4. CI audit: does this task execution earn CI or lose it?
+5. If verification fails → return to /spec
+
+### /ship
+1. Update PERFORMANCE_LEDGER.md (CI delta per skill used)
+2. Log to `/memory/YYYY-MM-DD.md`
+3. Execute Dream Cycle if triggered (source files settled)
+4. Summarize deliverables for user
 
 ---
 
-### Testing Requirements
+## Part 3: Anti-Model-Slop Rules
+
+### Definition
+**Model Slop** is any output that is:
+- Repetitive or templated without functional purpose
+- Hallucinated (fabricated facts, fake citations, non-existent APIs)
+- Verbose without substance
+- Mechanically compliant but intellectually hollow
+- Derivative without adding functional value
+
+### Enforcement Protocol
+Before delivering any output, ask:
+1. **Can I defend this with evidence?** (docs, logs, prior context)
+2. **Is this the minimum sufficient answer?**
+3. **Does this earn CI or just consume tokens?**
+
+If the answer to #1 is no → STOP. Research before output.
+If the answer to #2 is no → Trim ruthlessly.
+If the answer to #3 is no → Improve or abstain.
+
+### CI Impact
+- Delivering verified, valuable output: **+5 CI**
+- Delivering Model Slop: **-10 CI** (and requires rework)
+- Hallucination detected: **STOP**, audit, escalate
+
+---
+
+## Part 4: Testing Requirements
 
 Before deploying ANY change:
 - [ ] Unit tests pass (`test_*.py`)
@@ -55,126 +122,45 @@ Before deploying ANY change:
 - [ ] Performance test (tokens per task OK?)
 - [ ] Regression test (old features still work?)
 - [ ] Error handling test
+- [ ] Model Slop audit (is output verifiable?)
 
 ---
 
-### Monitoring & Alerts
+## Part 5: Monitoring & Alerts
 
 #### Track Continuously
 - Tokens per task (target: <500)
 - Cost per run (target: <$0.01 per 100 records)
 - Error rate (target: <0.1%)
-- Failed backup detection
+- Failed archive detection
 - Unusual activity patterns
 
 #### Alert Conditions
 - ⚠️ Token usage 2x normal → Investigate prompt efficiency
-- ⚠️ Backup failures → Stop all write operations
+- ⚠️ Archive failures → Stop all write operations
 - ⚠️ Error rate > 1% → Rollback latest changes
 - ⚠️ Unusual access patterns → Security audit
 
 ---
 
-## Part 2: Parallel Coding Workflow
+## Part 6: CI (Credibility Index) Rules
 
-### VS Code Multi-Root Workspace
+Every skill execution updates PERFORMANCE_LEDGER.md:
 
-```
-Workspace Structure:
-├── project1_trading-bot/    (CCXT + TA-Lib)
-├── project2_ai-agent/      (Ollama + Memory)
-├── .vscode/settings.json
-└── parallel.code-workspace
-```
+| Event | CI Delta |
+|-------|----------|
+| Verified successful task | +5 |
+| Failed or reverted task | -10 |
+| Model Slop delivered | -10 |
+| Hallucination detected | Immediate STOP + escalate |
+| 10 consecutive clean tasks | +10 bonus |
 
-### Opening Workspace
-```bash
-# In VS Code:
-File → Open Workspace from File → parallel.code-workspace
-```
-
-### Parallel Features
-
-| Feature | Shortcut | Usage |
-|---------|----------|-------|
-| Split Editor | `Ctrl+\` | View 2 files side by side |
-| Multi Cursor | `Alt+Click` | Edit multiple locations |
-| Terminal Tabs | `Ctrl+Shift+`` | Run multiple processes |
-| Find & Replace | `Ctrl+Shift+H` | Replace across files |
-
----
-
-### Multi-Agent Task Template
-
-When assigning parallel tasks to Claude:
-
-```
-TRƯỚC KHI LÀM GÌ:
-1. Đọc ../SOUL.md → Hiểu identity & constraints
-2. Đọc ../USER.md → Biết preferences
-3. Đọc ../GOVERNANCE.md → Follow rules
-4. Đọc ../COORDINATION.md → Multi-agent workflow
-
-TASK PARALLEL:
-- [Task 1 for project1]
-- [Task 2 for project2]
-
-SAU SESSION:
-- Log vào memory/YYYY-MM-DD.md
-- Update MEMORY.md nếu có key learnings
-```
-
----
-
-### Claude Code Integration
-
-#### Context Loading Order
-```
-1. SOUL.md         → Agent identity & constraints
-2. USER.md         → User preferences
-3. GOVERNANCE.md   → Policy & rules
-4. RULES.md        → Operating procedures
-5. COORDINATION.md → Multi-agent workflow
-6. MEMORY.md       → Long-term knowledge
-7. memory/YYYY-MM-DD.md → Today's context
-```
-
-#### @-Mentions Usage
-```
-@SOUL.md           → Inject identity
-@GOVERNANCE.md     → Inject policy rules
-@memory/2026-03-10.md → Today's logs
-```
-
----
-
-### Running Parallel Tasks
-
-#### Terminal Workflow
-```bash
-# Terminal 1: Trading Bot
-cd project1_trading-bot
-python main.py
-
-# Terminal 2: AI Agent
-cd project2_ai-agent
-python main.py
-
-# Terminal 3: Monitor logs
-tail -f logs/*.log
-```
-
-#### Claude Prompt for Parallel Generation
-```
-@memory "Generate parallel implementations:
-1. Bot v1: CCXT + TA-Lib signal detection
-2. Agent v1: Ollama + memory context
-
-Output:
-- project1_trading-bot/main.py
-- project2_ai-agent/main.py
-- Common utilities shared"
-```
+| CI Range | Status | Behavior |
+|----------|--------|---------|
+| >= 70 | Trusted | Auto-approved execution |
+| 40-69 | Normal | Standard /explore → /ship workflow |
+| 30-39 | Restricted | Explicit verification step per deliverable |
+| < 30 | Blocked | Cannot execute; requires human review |
 
 ---
 
@@ -182,32 +168,24 @@ Output:
 
 ```
 ┌──────────────────────────────────────────────────────────┐
-│ AGENT RULES QUICK REF                                    │
+│ NEUTRON EVO OS QUICK REF                                 │
 ├──────────────────────────────────────────────────────────┤
 │ BEFORE ANY ACTION:                                       │
-│   □ Backup first (if modifying data)                    │
-│   □ Check access control (GOVERNANCE.md)               │
-│   □ Get approval if > 100 records                      │
+│   □ Archive first (never hard delete user data)        │
+│   □ Check PERFORMANCE_LEDGER.md (CI audit)             │
+│   □ Verify: can I defend this output?                  │
+│                                                          │
+│ WORKFLOW: /explore → /spec → /build → /verify → /ship  │
 │                                                          │
 │ FORBIDDEN:                                              │
-│   ✗ Hard delete data                                    │
-│   ✗ Modify production without staging test              │
-│   ✗ Skip backup                                         │
+│   ✗ Hard delete user data (→ /memory/archived/)       │
+│   ✗ Model Slop output                                   │
+│   ✗ Hallucination                                       │
+│   ✗ Operate outside 5-step workflow                     │
+│   ✗ Execute skill with CI < 30                          │
 │                                                          │
-│ PARALLEL:                                               │
-│   → Use parallel.code-workspace                         │
-│   → Split editor for review                             │
-│   → Terminal tabs for running                           │
+│ STOP CONDITIONS:                                        │
+│   → Policy conflict, archive failure, data loss         │
+│   → Low confidence (< 0.7), hallucination detected     │
 └──────────────────────────────────────────────────────────┘
 ```
-
----
-
-## Part 3: UI Design Standards
-
-All UI/frontend tasks must follow these rules:
-
-- **Consistency**: All new interfaces must follow colors and spacing in `DESIGN_SYSTEM.md`
-- **Frameworks**: Use Shadcn/ui or Tailwind CSS
-- **Verification**: AI must verify responsive layout before completing task
-- **Accessibility**: Ensure WCAG AA compliance (contrast ratio ≥ 4.5:1)

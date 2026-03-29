@@ -1,10 +1,10 @@
 {
-  "name": "ai-context-master",
-  "displayName": "AI Context Master",
-  "description": "Automatically apply AI Context Master to any workspace - Memory Stack for Claude Code, Cursor, and all AI Assistants",
-  "version": "1.3.0",
+  "name": "neutron-evo-os",
+  "displayName": "NEUTRON EVO OS",
+  "description": "NEUTRON EVO OS - Sovereign Intelligence OS: Memory Stack, Skill Router, Dream Cycle for Claude Code, Cursor, and all AI Assistants",
+  "version": "4.0.0",
   "icon": "icon.png",
-  "publisher": "ai-context-master",
+  "publisher": "neutron-evo-os",
   "engines": {
     "vscode": "^1.85.0"
   },
@@ -22,24 +22,24 @@
   ],
   "activationEvents": [
     "onStartupFinished",
-    "onCommand:ai-context-master.apply",
-    "onCommand:ai-context-master.setup"
+    "onCommand:neutron-evo-os.apply",
+    "onCommand:neutron-evo-os.setup"
   ],
   "main": "./out/extension.js",
   "contributes": {
     "commands": [
       {
-        "command": "ai-context-master.apply",
+        "command": "neutron-evo-os.apply",
         "title": "AI Context Master: Apply to Workspace",
         "description": "Apply AI Context Master templates to current workspace"
       },
       {
-        "command": "ai-context-master.setup",
+        "command": "neutron-evo-os.setup",
         "title": "AI Context Master: Quick Setup",
         "description": "Quick setup with guided wizard"
       },
       {
-        "command": "ai-context-master.openDocs",
+        "command": "neutron-evo-os.openDocs",
         "title": "AI Context Master: Open Documentation",
         "description": "Open AI Context Master documentation"
       }

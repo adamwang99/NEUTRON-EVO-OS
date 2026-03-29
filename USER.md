@@ -1,8 +1,8 @@
 # USER.md - User Preferences
 
 ## User Profile
-- **Name**: Adam Wang
-- **Working context**: Development, trading, automation
+- **Name**: Adam Wang (Vương Hoàng Tuấn)
+- **Working context**: Development, trading, automation, AI agent systems
 
 ## Preferences
 - **Language**: Vietnamese (primary), English (technical)
@@ -11,8 +11,10 @@
 - **Feedback**: Quick iterations, show progress
 
 ## Current Projects
+- NEUTRON EVO OS development (v4.0.0)
 - Trading system development
 - Claude Code integration
+- AI agent skill architecture
 - VS Code workflow optimization
 
 ## Important Notes

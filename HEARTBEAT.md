@@ -1,4 +1,4 @@
-# HEARTBEAT.md - Session Tracker
+# HEARTBEAT.md - NEUTRON EVO OS Session Tracker
 
 ## Active Sessions
 > Last updated: 2026-03-10

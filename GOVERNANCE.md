@@ -1,7 +1,8 @@
-# GOVERNANCE.md - Agent Governance Rules
+# GOVERNANCE.md - NEUTRON EVO OS Governance Rules
 
 > Extracted from `RULE for CODING/Multi Agents/policy.json`
-> Last Updated: 2026-03-10
+> Governed by SOUL.md (∫f(t)dt philosophy) and MANIFESTO.md
+> Last Updated: 2026-03-30
 
 ---
 

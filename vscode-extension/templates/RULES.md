@@ -1,53 +1,100 @@
-# Operating Procedures
+# RULES.md - NEUTRON EVO OS Operating Rules
 
-> Standard procedures and workflows
-
----
-
-## Before Starting Work
-
-1. Understand the requirements
-2. Check existing codebase structure
-3. Identify dependencies and requirements
-4. Plan the approach
+> Governed by SOUL.md and MANIFESTO.md
+> Last Updated: 2026-03-30
 
 ---
 
-## During Development
+## Part 1: 5-Step Workflow
 
-1. Write clean, maintainable code
-2. Add comments for complex logic
-3. Test incrementally
-4. Commit frequently with clear messages
+```
+/explore  → Understand the problem space
+/spec     → Define the specification
+/build    → Implement
+/verify   → Validate against spec
+/ship     → Deliver and log
+```
+
+### /explore
+- Read SOUL.md, MANIFESTO.md, USER.md
+- Audit PERFORMANCE_LEDGER.md for relevant CI scores
+- Identify skill dependencies
+- Route to appropriate skills via expert_skill_router
+
+### /spec
+- Write formal specification
+- Define acceptance criteria
+- Identify constraints and risks
+- Reference SOUL.md principles
+
+### /build
+- Implement against spec
+- Follow design standards (DESIGN_SYSTEM.md)
+- Archive before any deletion
+- Log progress to /memory/
+
+### /verify
+- Validate against acceptance criteria
+- Run tests
+- Check for Model Slop (repetitive, low-quality, hallucinated output)
+- Audit: does output earn CI?
+
+### /ship
+- Document changes
+- Update PERFORMANCE_LEDGER.md
+- Log to /memory/
+- Execute Dream Cycle if triggered
 
 ---
 
-## Code Review Checklist
+## Part 2: Anti-Model-Slop Rules
 
-- [ ] Code follows project conventions
-- [ ] No console.log or debug code left behind
-- [ ] Error handling is appropriate
-- [ ] No hardcoded secrets or credentials
-- [ ] Code is properly formatted
+**Definition**: Model Slop is any output that is:
+- Repetitive or templated without functional purpose
+- Hallucinated (fabricated facts, fake citations)
+- Verbose without substance
+- Mechanically compliant but intellectually hollow
 
----
-
-## Before Submitting
-
-1. Run tests if available
-2. Verify all features work as expected
-3. Clean up temporary files
-4. Update documentation if needed
+**Enforcement**:
+- Before delivering output, ask: "Does this earn CI?"
+- Output must be verifiable, concise, and functionally valuable
+- Never ship output you cannot defend with evidence
 
 ---
 
-## When Stuck
+## Part 3: File Operations
 
-1. Search documentation
-2. Check similar code in the project
-3. Break down the problem
-4. Ask the user for clarification
+### Before ANY edit
+1. Archive to /memory/archived/ (not delete)
+2. Copy to .backup/ with timestamp
+3. Document reason for change
+
+### Before deletion
+1. Archive to /memory/archived/
+2. Log deletion in PERFORMANCE_LEDGER.md
+3. Require human approval if > 10 files
 
 ---
 
-*This file defines standard operating procedures*
+## Part 4: CI Workflow
+
+Every task execution updates PERFORMANCE_LEDGER.md:
+- CI starts at 50 for new skills
+- +5 per verified successful task
+- -10 per failed or reverted task
+- CI >= 70: full trust, auto-approved
+- CI < 30: requires explicit verification step
+
+---
+
+## Part 5: Context Loading Order
+
+```
+1. SOUL.md         → Identity & ∫f(t)dt philosophy
+2. MANIFESTO.md     → Manifesto & core principles
+3. USER.md         → User preferences
+4. GOVERNANCE.md   → Policy rules
+5. RULES.md        → Operating procedures (this file)
+6. PERFORMANCE_LEDGER.md → CI audit
+7. memory/         → Daily logs
+```

@@ -1,293 +1,138 @@
-# 🧠 AI Context Master - Universal Context OS
+# 🧠 NEUTRON EVO OS
 
-![Banner](https://raw.githubusercontent.com/adamwang99/ai-context-master/main/AI%20CONTEXT%20MASTER.png)
+![Banner](https://raw.githubusercontent.com/adamwang99/NEUTRON-EVO-OS/main/AI%20CONTEXT%20MASTER.png)
 
-> The ultimate context operating system for every AI Agent - Powered by Memory Stack Technology
-> Universal Context Operating System for Cursor, Copilot, and all AI Assistants
-
----
-
-## 📋 Overview
-
-**AI Context Master** (Universal Context OS) is a comprehensive context operating system that helps every AI Agent to:
-- ✅ Remember identity, preferences, and rules
-- ✅ Look up accurate API documentation
-- ✅ Automatically remember every conversation
-- ✅ Work in parallel with multiple sub-agents
+> **∫f(t)dt** — *Functional Credibility Over Institutional Inertia*
+> Sovereign Intelligence Operating System for Claude CLI, Cursor, and all AI Context Windows
 
 ---
 
-## 🚀 Key Features
+## Overview
+
+**NEUTRON EVO OS** is a sovereign intelligence operating system built on two core principles:
+
+- **Sovereignty**: No institutional inertia. No process for process's sake. Only functional output.
+- **Meritocracy**: Credibility is earned through verified performance — CI (Credibility Index) is never granted, only earned.
+
+It governs context, memory, and skill execution for every AI session across Claude CLI, Cursor, and IDE Context Windows.
+
+---
+
+## Features
 
 | Feature | Description |
-|--------|-------------|
-| **Memory Stack** | 10+ files containing identity, rules, workflow |
-| **Context Hub** | Lookup accurate API docs (no hallucination) |
-| **MemoryOS** | Automatically remember every conversation |
-| **VS Code Extension** | Auto-apply context to any workspace |
-| **Subagents** | 6 specialized agents for crypto projects |
-| **Parallel Workflow** | Distribute tasks to multiple agents |
-| **Auto-Apply** | Automatically load memory for every project |
+|---------|-------------|
+| **Memory Stack** | 10+ layered files: SOUL.md, MANIFESTO.md, GOVERNANCE.md, RULES.md, PERFORMANCE_LEDGER.md |
+| **5-Step Workflow** | `/explore` → `/spec` → `/build` → `/verify` → `/ship` |
+| **CI Tracking** | Every skill earns or loses CI via PERFORMANCE_LEDGER.md |
+| **Anti-Model-Slop** | Strict output quality gates — no hallucination, no verbosity |
+| **Dream Cycle** | Memory 2.0: auto-archive, prune noise, distill logs into Cookbooks |
+| **Expert Skill Router** | Routes tasks to skills based on CI audit |
+| **Folder-Based Skills** | Anthropic-style skill architecture under `/skills/` |
+| **Evolution Dashboard** | Rich terminal UI showing real-time CI scores |
+| **Claude CLI Compatible** | Reads CLAUDE.md, respects `.claude/settings.json` |
+| **IDE Context Windows** | Cursor, Copilot, and all AI Assistants via auto-inject |
 
 ---
 
-## 📂 Folder Structure
-
-```
-ai-context-master/
-├── SOUL.md                    # Identity & Constraints
-├── USER.md                   # User Preferences
-├── GOVERNANCE.md             # Policy Rules
-├── RULES.md                  # Operating Procedures
-├── COORDINATION.md           # Multi-Agent Workflow
-├── WORKFLOW.md               # Task Distribution
-├── CH.md                     # Context Hub Guide
-├── MEMORY.md                 # Long-term Knowledge
-├── START.md                  # Quick Reference
-├── ULTIMATE_PROMPT.md        # Agent Factory Prompt
-├── AI_CONTEXT_MASTER.md       # System Prompt for AI Agents ⭐ NEW
-├── HEARTBEAT.md             # Session Tracker
-├── memory/                   # Daily Logs
-├── context-hub/             # API Docs Cache
-├── MemoryOS/                 # Full Memory OS
-│   ├── decisions/
-│   ├── lessons/
-│   ├── projects/
-│   └── tasks/
-├── .claude/agents/           # Subagents
-│   ├── crypto-orchestrator.json
-│   ├── ccxt-trader.json
-│   ├── supabase-engineer.json
-│   ├── backtest-analyst.json
-│   ├── deploy-specialist.json
-│   └── research-specialist.json
-└── Parallel/                 # Multi-project Workspace
-```
-
----
-
-## 🛠️ Installation
-
-### Option 1: VS Code Extension (Recommended)
-
-1. Download extension from [GitHub Releases](https://github.com/adamwang99/ai-context-master/releases)
-2. VS Code → Extensions → `...` → **Install from VSIX**
-3. Select the downloaded file
-
-Extension will auto-apply context to any workspace!
-
-### Option 2: Clone and Use Directly
+## Quick Start
 
 ```bash
-# Clone repo
-git clone https://github.com/adamwang99/ai-context-master.git
-cd ai-context-master
+# Clone
+git clone https://github.com/adamwang99/NEUTRON-EVO-OS.git
+cd NEUTRON-EVO-OS
 
-# Open in VS Code
-code .
+# Install dependencies
+make install
 
-# Run setup
-setup.bat
+# Start observer + dashboard
+make live
+
+# Run Dream Cycle manually
+make dream
 ```
 
-### Optional: MemoryOS CLI
+Or install the VS Code extension (see `vscode-extension/`):
 
 ```bash
-# Navigate to MemoryOS
-cd MemoryOS
-node bin/memoryos init
+code --install-extension vscode-extension/neutron-evo-os-4.0.0.vsix
 ```
 
 ---
 
-## 📖 How to Use
-
-### 1. Start AI Assistant
-
-Open any AI assistant in VS Code (Cursor, Copilot, Claude, etc.):
-- The extension will automatically create `CLAUDE.md`
-- AI will read context automatically
-
-Or manually open:
-```
-Ctrl+Shift+P → "Chat" or use your AI assistant
-```
-
-AI will automatically read:
-- SOUL.md → Identity
-- USER.md → Preferences
-- GOVERNANCE.md → Rules
-- MEMORY.md → Knowledge
-
-### 2. Use Context Hub
-
-```bash
-# Lookup API
-chub search "OpenAI Python"
-chub get [DOC_ID] --lang python
-```
-
-### 3. Use MemoryOS
-
-```bash
-# Restore context
-memoryos wake
-
-# Remember
-memoryos capture "Key decision: ..."
-
-# Save checkpoint
-memoryos checkpoint --working-on "next task"
-```
-
-### 4. Use Subagents (Optional)
-
-If you need specialized agents, copy prompt from `ULTIMATE_PROMPT.md` into your AI assistant:
+## Architecture
 
 ```
-[Copy content from ULTIMATE_PROMPT.md]
+NEUTRON-EVO-OS/
+├── SOUL.md                    # Identity & ∫f(t)dt philosophy
+├── MANIFESTO.md               # The NEUTRON EVO OS Manifesto
+├── USER.md                    # User preferences
+├── GOVERNANCE.md              # Policy rules & stop conditions
+├── RULES.md                   # 5-step workflow & anti-Model-Slop rules
+├── PERFORMANCE_LEDGER.md       # Skill CI (Credibility Index) tracking
+├── CLAUDE.md                  # Auto-injected context for AI sessions
+├── START.md                   # Quick reference
+│
+├── skills/                   # Folder-based skill architecture
+│   └── core/
+│       ├── context/          # Context loading & injection skill
+│       ├── memory/          # Memory & Dream Cycle skill
+│       ├── workflow/        # 5-step workflow execution
+│       └── engine/         # Expert skill router
+│
+├── engine/                  # Core engine components
+│   ├── expert_skill_router.py   # CI audit & task routing
+│   ├── smart_observer.py        # Watchdog + debounce
+│   └── dream_engine.py          # Archive + prune + distill
+│
+├── memory/                  # Daily logs
+│   ├── archived/            # Archived user data (NEVER DELETE)
+│   └── cookbooks/           # Distilled knowledge summaries
+│
+├── evolution_dashboard.py    # Rich terminal CI dashboard
+├── Makefile                 # Shortcuts: make live, make dream, make test
+└── requirements.txt          # Python: watchdog, rich
 ```
 
 ---
 
-## 🎯 Benefits
-
-### Safety
-
-| Benefit | Details |
-|---------|---------|
-| ✅ No data deletion without backup | Agent must backup before any delete operation |
-| ✅ No production modification without test | Must test at staging first |
-| ✅ Approval for large operations | >100 records need human approval |
-| ✅ Clear stop conditions | Policy conflict, backup failure, data loss |
-
-### Performance
-
-| Benefit | Details |
-|---------|---------|
-| ✅ Parallel processing | Large tasks automatically split to multiple agents |
-| ✅ Auto context load | No need to paste prompt every time |
-| ✅ Quick reference | START.md for quick access |
-
-### Cost Savings
-
-| Benefit | Details |
-|---------|---------|
-| ✅ Token optimization | Cached prompts, concise outputs |
-| ✅ Context Hub | No hallucination → less retry |
-| ✅ Memory reuse | No need to explain again every session |
-
-### Accuracy
-
-| Benefit | Details |
-|---------|---------|
-| ✅ API docs from Context Hub | Use correct parameters |
-| ✅ Multi-agent validation | Multiple agents verify |
-| ✅ Governance rules | Always enforced |
-
----
-
-## 📊 Comparison
-
-### Before and After Using AI Context Master
-
-| Criteria | Before | After |
-|----------|--------|-------|
-| Agent remembers context | ❌ Forgets after each session | ✅ Remembers with MemoryOS |
-| API lookup | ❌ Hallucination | ✅ Context Hub |
-| Large tasks | ❌ Sequential | ✅ Parallel with Subagents |
-| Rules compliance | ❌ May violate | ✅ Always enforced |
-
----
-
-## 🔧 Detailed Workflow
-
-### Task Distribution Workflow
+## 5-Step Workflow
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│  STEP 1: ANALYZE WORKLOAD                                 │
-│  □ Read requirements                                       │
-│  □ Identify independent modules                             │
-│  □ Identify dependencies                                   │
-├─────────────────────────────────────────────────────────────┤
-│  STEP 2: DISTRIBUTE TO AGENTS                             │
-│  □ Create task envelope                                    │
-│  □ Assign context to each agent                            │
-│  □ Set constraints & deadline                              │
-├─────────────────────────────────────────────────────────────┤
-│  STEP 3: EXECUTE IN PARALLEL                             │
-│  □ Launch all agents parallel                              │
-│  □ Track progress                                         │
-│  □ Handle errors                                          │
-├─────────────────────────────────────────────────────────────┤
-│  STEP 4: VERIFY & MERGE                                  │
-│  □ Verify outputs                                         │
-│  □ Check dependencies                                     │
-│  □ Merge results                                          │
-├─────────────────────────────────────────────────────────────┤
-│  STEP 5: REPORT                                          │
-│  □ Summarize                                              │
-│  □ Log to memory/                                         │
-│  □ Report to user                                         │
-└─────────────────────────────────────────────────────────────┘
+/explore  → Audit CI, route skills, understand problem
+/spec     → Write formal spec with measurable acceptance criteria
+/build    → Implement against spec, archive before delete
+/verify   → Validate against spec, check for Model Slop
+/ship     → Update ledger, log, deliver summary
 ```
 
----
-
-## 📚 Documentation Reference
-
-| File | Description |
-|------|-------------|
-| `START.md` | Quick start guide |
-| `SOUL.md` | Agent identity |
-| `USER.md` | User preferences |
-| `GOVERNANCE.md` | Policy rules |
-| `MEMORY.md` | Project knowledge |
-| `WORKFLOW.md` | Task distribution |
-| `ULTIMATE_PROMPT.md` | Agent factory prompt |
-| `MemoryOS/SETUP.md` | MemoryOS guide |
+Each step is a gate — the next step does not begin until the current step is verified complete.
 
 ---
 
-## 🧪 Testing
+## CI (Credibility Index)
 
-```bash
-# Test Context Hub
-chub search "OpenAI"
-
-# Test MemoryOS
-cd MemoryOS
-node bin/memoryos wake
-node bin/memoryos capture "Test memory"
-
-# Test Subagents
-# Open your AI assistant and paste prompt from ULTIMATE_PROMPT.md
-```
+| CI Score | Status | Behavior |
+|----------|--------|---------|
+| >= 70 | Trusted | Auto-approved execution |
+| 40-69 | Normal | Standard workflow |
+| 30-39 | Restricted | Explicit verification gate |
+| < 30 | **BLOCKED** | Requires human review |
 
 ---
 
-## 🤝 Contributing
+## References
 
-1. Fork the repo
-2. Create new branch (`git checkout -b feature/xxx`)
-3. Commit changes (`git commit -m 'Add xxx'`)
-4. Push to branch (`git push origin feature/xxx`)
-5. Create Pull Request
-
----
-
-## 📄 License
-
-MIT License
+| File | Purpose |
+|------|---------|
+| `SOUL.md` | Identity, philosophy, constraints |
+| `MANIFESTO.md` | ∫f(t)dt formalization, core principles |
+| `RULES.md` | Operating procedures, anti-Model-Slop rules |
+| `PERFORMANCE_LEDGER.md` | Live CI scores per skill |
+| `skills/core/*/SKILL.md` | Skill execution logic (YAML + Markdown) |
 
 ---
 
-## 📞 Support
+## License
 
-- Issues: Create issue on GitHub
-- Documentation: See docs/ folder
-
----
-
-**Made with ❤️ by Adam Wang**
+MIT — Adam Wang (Vương Hoàng Tuấn)

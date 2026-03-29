@@ -2,7 +2,7 @@
 chcp 65001 >nul
 echo.
 echo ========================================
-echo   Apply AI Context Master to this project
+echo   Apply NEUTRON EVO OS to this project
 echo ========================================
 echo.
 
