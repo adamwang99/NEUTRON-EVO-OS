@@ -1,6 +1,6 @@
 # 🧠 NEUTRON EVO OS
 
-![Banner](https://raw.githubusercontent.com/adamwang99/NEUTRON-EVO-OS/main/AI%20CONTEXT%20MASTER.png)
+![Banner](https://raw.githubusercontent.com/adamwang99/NEUTRON-EVO-OS/main/NEUTRON%20EVO%20OS.png)
 
 > **∫f(t)dt** — *Functional Credibility Over Institutional Inertia*
 > Sovereign Intelligence Operating System for Claude CLI, Cursor, and all AI Context Windows
