@@ -22,6 +22,11 @@ All notable changes are documented here. The format follows [Keep a Changelog](h
 - VS Code Extension: `templateSource=external` mode loads real files from NEUTRON_ROOT
 - VSIX package rebuilt: `neutron-evo-os-4.1.0.vsix`
 
+### Bug Fixes
+
+- **install-global.sh auto-apply**: Now STEP 6 scans `/mnt/data/projects/*` for existing projects with CLAUDE.md and copies missing NEUTRON files (MANIFESTO.md, WORKFLOW.md, COORDINATION.md, PERFORMANCE_LEDGER.md, MEMORY.md, START.md). Creates `memory/` and `memory/archived/` if missing.
+- **PreLoadMemory hook**: Fixed loading only 3 files → now loads all 9 context files.
+
 ### Documentation
 
 - README updated with System-Wide Installation section at top
