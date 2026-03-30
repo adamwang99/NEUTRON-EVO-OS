@@ -9,10 +9,10 @@
 
 | Skill | CI Score | Tasks Completed | Last Active |
 |-------|----------|-----------------|-------------|
-| context | 50 | 0 | - |
+| context | 55 | 1 | 2026-03-30 |
 | memory | 50 | 0 | - |
 | workflow | 50 | 0 | - |
-| engine | 50 | 0 | - |
+| engine | 75 | 1 | 2026-03-30 |
 
 ### CI Score Reference
 
@@ -41,11 +41,11 @@
 
 | Metric | Value |
 |--------|-------|
-| Total Tasks | 0 |
+| Total Tasks | 2 |
 | System Uptime | - |
 | Dream Cycles | 0 |
 | Last Dream | - |
-| Overall System CI | 50.0 |
+| Overall System CI | 70.0 |
 
 ---
 
@@ -55,4 +55,5 @@ _Entries added after each /ship step._
 
 | Date | Skill | Task | CI Delta | Notes |
 |------|-------|------|----------|-------|
-| - | - | - | - | - |
+| 2026-03-30 | engine | System-wide installation v4.1.0 | +15 | install-global.sh, VS Code extension, PreLoadMemory fix |
+| 2026-03-30 | context | OCTA workspace audit & fix | +5 | PreLoadMemory upgrade, missing files verified |
