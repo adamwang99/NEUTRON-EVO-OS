@@ -1,8 +1,8 @@
 {
   "name": "neutron-evo-os",
   "displayName": "NEUTRON EVO OS",
-  "description": "NEUTRON EVO OS - Sovereign Intelligence OS: Memory Stack, Skill Router, Dream Cycle for Claude Code, Cursor, and all AI Assistants",
-  "version": "4.0.0",
+  "description": "NEUTRON EVO OS v4.1.0 — Sovereign Intelligence OS: auto-inject ∫f(t)dt context into every project, system-wide",
+  "version": "4.1.0",
   "icon": "icon.png",
   "publisher": "neutron-evo-os",
   "engines": {
@@ -10,84 +10,120 @@
   },
   "categories": [
     "Other",
-    "Snippets"
+    "Programming Languages"
   ],
   "keywords": [
+    "neutron",
+    "evo",
     "ai",
     "claude",
     "cursor",
     "context",
     "memory",
-    "assistant"
+    "sovereign",
+    "assistant",
+    "workflow"
   ],
   "activationEvents": [
     "onStartupFinished",
     "onCommand:neutron-evo-os.apply",
-    "onCommand:neutron-evo-os.setup"
+    "onCommand:neutron-evo-os.setup",
+    "onCommand:neutron-evo-os.openDocs",
+    "onCommand:neutron-evo-os.dream",
+    "onCommand:neutron-evo-os.status",
+    "onCommand:neutron-evo-os.installGlobal"
   ],
   "main": "./out/extension.js",
   "contributes": {
     "commands": [
       {
         "command": "neutron-evo-os.apply",
-        "title": "AI Context Master: Apply to Workspace",
-        "description": "Apply AI Context Master templates to current workspace"
+        "title": "NEUTRON EVO OS: Apply to Workspace",
+        "category": "NEUTRON EVO OS",
+        "description": "Inject NEUTRON EVO OS context files into current workspace"
       },
       {
         "command": "neutron-evo-os.setup",
-        "title": "AI Context Master: Quick Setup",
-        "description": "Quick setup with guided wizard"
+        "title": "NEUTRON EVO OS: Quick Setup",
+        "category": "NEUTRON EVO OS",
+        "description": "Configure NEUTRON EVO OS settings"
       },
       {
         "command": "neutron-evo-os.openDocs",
-        "title": "AI Context Master: Open Documentation",
-        "description": "Open AI Context Master documentation"
+        "title": "NEUTRON EVO OS: Open Documentation",
+        "category": "NEUTRON EVO OS",
+        "description": "Open NEUTRON EVO OS documentation on GitHub"
+      },
+      {
+        "command": "neutron-evo-os.dream",
+        "title": "NEUTRON EVO OS: Dream Cycle",
+        "category": "NEUTRON EVO OS",
+        "description": "Trigger memory pruning and distillation"
+      },
+      {
+        "command": "neutron-evo-os.status",
+        "title": "NEUTRON EVO OS: Status",
+        "category": "NEUTRON EVO OS",
+        "description": "Show NEUTRON EVO OS system status"
+      },
+      {
+        "command": "neutron-evo-os.installGlobal",
+        "title": "NEUTRON EVO OS: Install Globally",
+        "category": "NEUTRON EVO OS",
+        "description": "Install NEUTRON EVO OS globally for system-wide coverage"
       }
     ],
     "configuration": {
-      "title": "AI Context Master",
+      "title": "NEUTRON EVO OS",
       "properties": {
-        "aiContextMaster.enabled": {
+        "neutronEvoOs.enabled": {
           "type": "boolean",
           "default": true,
-          "description": "Enable AI Context Master"
+          "description": "Enable or disable NEUTRON EVO OS extension"
         },
-        "aiContextMaster.autoInject": {
+        "neutronEvoOs.autoInject": {
           "type": "boolean",
           "default": true,
-          "description": "Automatically inject context files when opening a folder"
+          "description": "Automatically inject context files when opening any folder"
         },
-        "aiContextMaster.templateSource": {
+        "neutronEvoOs.templateSource": {
           "type": "string",
-          "default": "inline",
-          "enum": ["inline", "external"],
-          "description": "Template source: inline (built-in) or external (custom folder)"
+          "default": "embedded",
+          "enum": ["embedded", "external"],
+          "description": "'embedded' = use built-in templates (works offline). 'external' = load full context files from NEUTRON_ROOT"
         },
-        "aiContextMaster.customTemplatePath": {
+        "neutronEvoOs.customTemplatePath": {
           "type": "string",
           "default": "",
-          "description": "Path to custom template folder (when templateSource is external)"
+          "description": "Path to custom template folder (when templateSource is 'external'). Overrides NEUTRON_ROOT"
         },
-        "aiContextMaster.files": {
+        "neutronEvoOs.files": {
           "type": "array",
           "default": [
             "CLAUDE.md",
             "SOUL.md",
+            "MANIFESTO.md",
             "USER.md",
             "GOVERNANCE.md",
-            "RULES.md"
+            "RULES.md",
+            "PERFORMANCE_LEDGER.md",
+            "START.md",
+            "WORKFLOW.md"
           ],
-          "description": "Files to inject"
+          "description": "Context files to inject into each workspace"
         },
-        "aiContextMaster.excludePatterns": {
+        "neutronEvoOs.excludePatterns": {
           "type": "array",
           "default": [
             "**/node_modules/**",
             "**/.git/**",
             "**/dist/**",
-            "**/build/**"
+            "**/build/**",
+            "**/__pycache__/**",
+            "**/.venv/**",
+            "**/venv/**"
           ],
-          "description": "Folders to exclude from auto-inject"
+          "description": "Folders to skip when auto-injecting"
         }
       }
     }
@@ -96,12 +132,13 @@
     "vscode:prepublish": "npm run compile",
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
-    "test": "node ./out/test/runTest.js"
+    "package": "vsce package",
+    "publish": "vsce publish"
   },
   "devDependencies": {
     "@types/node": "^18.0.0",
     "@types/vscode": "^1.85.0",
-    "@vscode/test-electron": "^2.3.0",
+    "@vscode/vsce": "^2.19.0",
     "typescript": "^5.0.0"
   }
 }

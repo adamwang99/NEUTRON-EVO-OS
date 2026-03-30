@@ -4,6 +4,31 @@ All notable changes are documented here. The format follows [Keep a Changelog](h
 
 ---
 
+## [4.1.0] — 2026-03-30
+
+### New Features
+
+- **`install-global.sh`** — System-wide installer: applies NEUTRON EVO OS context to ALL projects (current & future). Sets up `~/.claude/settings.json`, `~/.claude/CLAUDE.md`, `~/.neutron-evo-os/`.
+- **`make install-global`** — `Makefile` target that runs `install-global.sh`.
+- **`~/.claude/CLAUDE.md`** — Global fallback context loaded automatically by Claude Code at every session start.
+- **`~/.claude/settings.json` global setup** — SessionStart hook + PreToolUse backup hook applied globally. NEUTRON_ROOT env var set.
+- **VS Code Extension v4.1.0** — New commands: `NEUTRON EVO OS: Install Globally`, `NEUTRON EVO OS: Status`, `NEUTRON EVO OS: Dream Cycle`. Fixed config keys (`neutronEvoOs.*` vs old `aiContextMaster.*`). Added MANIFESTO.md, START.md, WORKFLOW.md, PERFORMANCE_LEDGER.md to default inject list.
+
+### Improvements
+
+- VS Code Extension: config keys aligned (`neutronEvoOs.*` consistently)
+- VS Code Extension: command names prefixed with `NEUTRON EVO OS:` category
+- VS Code Extension: embedded templates include full ∫f(t)dt philosophy stubs
+- VS Code Extension: `templateSource=external` mode loads real files from NEUTRON_ROOT
+- VSIX package rebuilt: `neutron-evo-os-4.1.0.vsix`
+
+### Documentation
+
+- README updated with System-Wide Installation section at top
+- Architecture diagram updated to show `install-global.sh` and `vscode-extension/`
+
+---
+
 ## [4.0.0] — 2026-03-30
 
 ### Breaking Changes

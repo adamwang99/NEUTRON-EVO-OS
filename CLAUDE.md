@@ -36,5 +36,22 @@ Skills live under `/skills/` in folder format (Anthropic style):
 - `skills/core/workflow/` — Workflow execution
 - `skills/core/engine/` — Expert skill router
 
-## Setup for New Projects
-Run `apply-context.bat` (Windows) or `apply-context.sh` (Mac/Linux) to copy this context to any project.
+## System-Wide Setup ⭐
+
+Apply NEUTRON EVO OS to **all projects** (existing & future) with one command:
+
+```bash
+bash install-global.sh   # or: make install-global
+```
+
+This installs globally:
+- `~/.claude/settings.json` — SessionStart hook loads NEUTRON context
+- `~/.claude/CLAUDE.md` — Global fallback context for all sessions
+- `~/.neutron-evo-os/` — Full NEUTRON EVO OS repo
+
+VS Code Extension (recommended for GUI users):
+```bash
+code --install-extension vscode-extension/neutron-evo-os-4.1.0.vsix
+```
+
+See README.md for full system-wide installation guide.

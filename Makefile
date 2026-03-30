@@ -1,23 +1,31 @@
-.PHONY: live dream install test clean lint format help
+.PHONY: live dream install install-global test clean lint help
 
 PYTHON := python3
 PIP := pip3
+SHELL := /usr/bin/env bash
 
 help:
-	@echo "NEUTRON-EVO-OS Makefile"
+	@echo "NEUTRON-EVO-OS v4.1.0 Makefile"
 	@echo ""
-	@echo "  make install   Install dependencies (pip + npm)"
-	@echo "  make live     Start Smart Observer + Dashboard"
-	@echo "  make dream    Run Dream Cycle manually"
-	@echo "  make test     Run tests"
-	@echo "  make clean    Remove cache files"
-	@echo "  make lint     Run linting"
+	@echo "  make install         Install dependencies (pip + npm)"
+	@echo "  make install-global Apply NEUTRON context to ALL projects (system-wide)"
+	@echo "  make live           Start Smart Observer + Dashboard"
+	@echo "  make dream          Run Dream Cycle manually"
+	@echo "  make test           Run tests"
+	@echo "  make clean          Remove cache files"
+	@echo "  make lint           Run linting"
 	@echo ""
+	@echo "  System-wide setup:"
+	@echo "    bash install-global.sh   (or make install-global)"
 
 install:
 	@echo "[NEUTRON-EVO-OS] Installing dependencies..."
 	$(PIP) install -r requirements.txt
 	@echo "[OK] Dependencies installed"
+
+install-global:
+	@echo "[NEUTRON-EVO-OS] Running global installer..."
+	@bash install-global.sh
 
 live: install
 	@echo "[NEUTRON-EVO-OS] Starting Smart Observer + Evolution Dashboard..."
