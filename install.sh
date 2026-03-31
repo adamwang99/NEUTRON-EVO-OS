@@ -130,7 +130,7 @@ PYEOF
 fi
 
 # ══════════════════════════════════════════════════════════════════════════════
-# PART 2 — MCP Server
+# PART 2 — MCP Server + SessionStart Hook
 # ══════════════════════════════════════════════════════════════════════════════
 if $MODE_MCP; then
     echo -e "\n${BOLD}─── Installing MCP Server ───${RESET}"
@@ -183,6 +183,48 @@ MCPJSON
         ok ".mcp.json created"
     else
         ok ".mcp.json already exists"
+    fi
+
+    # Add SessionStart hook (runs session-start.sh on every new Claude Code session)
+    HOOK_SCRIPT="$NEUTRON_ROOT_DIR/hooks/session-start.sh"
+    chmod +x "$HOOK_SCRIPT" 2>/dev/null || true
+    CLAUDE_SETTINGS="$HOME/.claude/settings.json"
+    mkdir -p "$HOME/.claude"
+
+    # Add hook using jq if available, else sed
+    if command -v jq &>/dev/null; then
+        if [ -f "$CLAUDE_SETTINGS" ]; then
+            # Only add if SessionStart not already pointing to NEUTRON
+            if ! grep -q "session-start\|NEUTRON.*hook" "$CLAUDE_SETTINGS" 2>/dev/null; then
+                cp "$CLAUDE_SETTINGS" "$CLAUDE_SETTINGS.backup"
+                jq --arg HOOK "$HOOK_SCRIPT" \
+                   '.hooks.SessionStart = [{"hooks": [{"type": "command", "command": ("bash \"" + $HOOK + "\"")}]}] | del(.hooks[][] | select(.type == "command" and (.command // "") | contains("session-start") | not))' \
+                   "$CLAUDE_SETTINGS" > "$CLAUDE_SETTINGS.tmp" && mv "$CLAUDE_SETTINGS.tmp" "$CLAUDE_SETTINGS"
+                ok "SessionStart hook added"
+            else
+                ok "SessionStart hook already configured"
+            fi
+        else
+            cat > "$CLAUDE_SETTINGS" << EOF
+{
+  "permissions": {
+    "defaultMode": "acceptEdits",
+    "allow": ["Bash", "Read", "Edit", "Write", "Glob", "Grep", "WebFetch", "mcp__*"]
+  },
+  "hooks": {
+    "SessionStart": [{
+      "hooks": [{
+        "type": "command",
+        "command": "bash \"$HOOK_SCRIPT\""
+      }]
+    }]
+  }
+}
+EOF
+            ok "Created settings.json with SessionStart hook"
+        fi
+    else
+        warn "jq not found — add SessionStart hook manually if needed"
     fi
 fi
 
