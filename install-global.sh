@@ -51,7 +51,7 @@ echo -e "${GREEN}[✓] Core files verified${RESET}"
 # STEP 1: Clone / update ~/.neutron-evo-os
 # =============================================================================
 NEUTRON_HOME="$HOME/.neutron-evo-os"
-echo -e "${YELLOW}[2/7] Setting up ~/.neutron-evo-os ...${RESET}"
+echo -e "${YELLOW}[2/8] Setting up ~/.neutron-evo-os ...${RESET}"
 
 if [ -d "$NEUTRON_HOME/.git" ]; then
     echo "  → Updating existing installation..."
@@ -69,88 +69,133 @@ fi
 echo -e "${GREEN}[✓] ~/.neutron-evo-os ready${RESET}"
 
 # =============================================================================
-# STEP 2: Configure ~/.claude/settings.json
+# STEP 2: Configure ~/.claude/settings.json (MERGE — never overwrite)
 # =============================================================================
 CLAUDE_DIR="$HOME/.claude"
 CLAUDE_SETTINGS="$CLAUDE_DIR/settings.json"
-echo -e "${YELLOW}[3/7] Configuring ~/.claude/settings.json ...${RESET}"
+echo -e "${YELLOW}[3/7] Configuring ~/.claude/settings.json (merge mode)...${RESET}"
 
 mkdir -p "$CLAUDE_DIR"
 
-# Create settings from scratch (or merge with existing)
+# Backup existing settings first
 if [ -f "$CLAUDE_SETTINGS" ]; then
-    echo "  → Merging with existing settings..."
-    # Backup first
     cp "$CLAUDE_SETTINGS" "$CLAUDE_SETTINGS.backup.$(date +%Y%m%d_%H%M%S)"
+    echo "  → Existing settings backed up"
+
+    # Only add NEUTRON-specific keys if missing (preserve existing keys!)
+    # Use jq if available for safe JSON merging
+    if command -v jq &>/dev/null; then
+        # Backup then merge env vars
+        cp "$CLAUDE_SETTINGS" "$CLAUDE_SETTINGS.pre-merge"
+        jq --arg ROOT "$NEUTRON_HOME" \
+           '.env.NEUTRON_ROOT = $ROOT | .env.CLAUDE_CODE_NO_FLICKER //= "1" | .env.DISABLE_TELEMETRY //= "1" | .env.CLAUDE_AUTOCOMPACT_PCT_OVERRIDE //= "80"' \
+           "$CLAUDE_SETTINGS" > "$CLAUDE_SETTINGS.tmp" && mv "$CLAUDE_SETTINGS.tmp" "$CLAUDE_SETTINGS"
+
+        # Add hooks only if not present
+        # Add SessionStart hook only (PreToolUse already in full settings heredoc)
+        if ! jq -e '.hooks.SessionStart' "$CLAUDE_SETTINGS" > /dev/null 2>&1; then
+            # Build safe backup command
+            BACKUP_CMD="NEUTRON_ROOT=$NEUTRON_HOME bash $NEUTRON_HOME/hooks/pretool-backup.sh"
+            jq --arg ROOT "$NEUTRON_HOME" --arg BCK "$NEUTRON_HOME/hooks/pretool-backup.sh" \
+               '.hooks = {
+                 "SessionStart": [{ "hooks": [{ "type": "command",
+                   "command": ("echo \'NEUTRON EVO OS v4.1.0 active\' && python3 " + $ROOT + "/engine/checkpoint_cli.py --read 2>/dev/null)")
+                 }] }]
+               }' \
+               "$CLAUDE_SETTINGS" > "$CLAUDE_SETTINGS.tmp" && mv "$CLAUDE_SETTINGS.tmp" "$CLAUDE_SETTINGS"
+        fi
+
+        fi
+        echo "  → Merged using jq (preserved existing keys)"
+    else
+        echo "  ⚠️  jq not found — using sed patching"
+        # Fallback: only add NEUTRON_ROOT env if missing
+        if ! grep -q "NEUTRON_ROOT" "$CLAUDE_SETTINGS"; then
+            sed -i "s/\"env\": {/\"env\": {\n    \"NEUTRON_ROOT\": \"$NEUTRON_HOME\",/g" "$CLAUDE_SETTINGS"
+        fi
+        # SessionStart hook only in non-jq fallback (PreToolUse skipped — jq path handles it safely)
+        if ! grep -q "SessionStart" "$CLAUDE_SETTINGS"; then
+            # Minimal: log startup in fallback mode (backup hook requires jq)
+            sed -i 's/"hooks": {/"hooks": {\n    "SessionStart": [{"hooks": [{"type": "command", "command": "echo NEUTRON_EVO_OS_4_1_0_ACTIVE"}]}]/' "$CLAUDE_SETTINGS" 2>/dev/null || true
+        fi
+    fi
 else
     echo "  → Creating new settings..."
-fi
-
-# Write complete settings.json
-cat > "$CLAUDE_SETTINGS" << 'SETTINGS_EOF'
+    cat > "$CLAUDE_SETTINGS" << SETTINGS_EOF
 {
   "$schema": "https://json.schemastore.org/claude-code-settings.json",
   "permissions": {
     "defaultMode": "acceptEdits",
-    "allow": [
-      "Bash",
-      "Read",
-      "Edit",
-      "Write",
-      "Glob",
-      "Grep",
-      "WebFetch",
-      "WebSearch",
-      "Agent",
-      "mcp__*"
-    ]
+    "allow": ["Bash", "Read", "Edit", "Write", "Glob", "Grep", "WebFetch", "WebSearch", "Agent", "mcp__*"]
   },
-  "model": "opus[1m]",
   "skipDangerousModePermissionPrompt": true,
   "cleanupPeriodDays": 0,
   "env": {
-    "NEUTRON_ROOT": "___NEUTRON_ROOT___",
+    "NEUTRON_ROOT": "$NEUTRON_HOME",
     "DISABLE_TELEMETRY": "1",
     "DISABLE_COST_WARNINGS": "1",
     "CLAUDE_CODE_ENABLE_TASKS": "true",
-    "BASH_MAX_TIMEOUT_MS": "600000"
+    "BASH_MAX_TIMEOUT_MS": "600000",
+    "CLAUDE_CODE_NO_FLICKER": "1",
+    "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "80",
+    "API_TIMEOUT_MS": "3000000"
   },
   "hooks": {
-    "SessionStart": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "echo '🟢 NEUTRON EVO OS v4.1.0 active — ∫f(t)dt' && [ -d \"$HOME/.neutron-evo-os\" ] && cat \"$HOME/.neutron-evo-os/SOUL.md\" 2>/dev/null | head -5"
-          }
-        ]
-      }
-    ],
-    "PreToolUse": [
-      {
-        "matcher": "Edit|Write",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "NEUTRON_ROOT=___NEUTRON_ROOT___ bash -c 'mkdir -p \"$NEUTRON_ROOT/.backup\" && for f in $(echo \"{path}\" | tr \",\" \"\\n\"); do if [ -f \"$f\" ]; then cp \"$f\" \"$NEUTRON_ROOT/.backup/$(basename \"$f\").$(date +%Y%m%d_%H%M%S).bak\" 2>/dev/null; fi; done' 2>/dev/null"
-          }
-        ]
-      }
-    ]
+    "SessionStart": [{
+      "hooks": [{
+        "type": "command",
+        "command": "echo '🟢 NEUTRON EVO OS v4.1.0 active — ∫f(t)dt' && python3 $NEUTRON_HOME/engine/checkpoint_cli.py --read 2>/dev/null || true"
+      }]
+    }],
+    "PreToolUse": [{
+      "matcher": "Edit|Write",
+      "hooks": [{
+        "type": "command",
+        "command": "NEUTRON_ROOT=$NEUTRON_HOME bash \"$NEUTRON_HOME/hooks/pretool-backup.sh\" \"{path}\""
+      }]
+    }]
   }
 }
 SETTINGS_EOF
+fi
 
-# Replace placeholder with actual path
-sed -i "s|___NEUTRON_ROOT___|${NEUTRON_HOME}|g" "$CLAUDE_SETTINGS"
-
-echo -e "${GREEN}[✓] ~/.claude/settings.json configured${RESET}"
+echo -e "${GREEN}[✓] ~/.claude/settings.json configured (merged — existing keys preserved)${RESET}"
 echo "     NEUTRON_ROOT=$NEUTRON_HOME"
+
+# =============================================================================
+# STEP 2b: Create .env.local from template (user API keys)
+# =============================================================================
+echo -e "${YELLOW}[3b/7] Creating .env.local template...${RESET}"
+if [ ! -f "$NEUTRON_HOME/.env.local" ]; then
+    cat > "$NEUTRON_HOME/.env.local" << 'ENVEOF'
+# NEUTRON EVO OS — Local Environment (NEVER commit this file!)
+# Copy from .env and fill in your actual values
+
+# API Configuration
+ANTHROPIC_AUTH_TOKEN=sk-REPLACE_WITH_YOUR_TOKEN
+ANTHROPIC_BASE_URL=https://api.anthropic.com/
+
+# Claude Code Settings
+CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1
+CLAUDE_CODE_ENABLE_TASKS=true
+CLAUDE_CODE_NO_FLICKER=1
+CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=80
+
+# System
+DISABLE_TELEMETRY=1
+DISABLE_COST_WARNINGS=1
+API_TIMEOUT_MS=3000000
+BASH_MAX_TIMEOUT_MS=600000
+ENVEOF
+    echo -e "${GREEN}[✓] .env.local created — EDIT THIS FILE with your API keys!${RESET}"
+else
+    echo "  → .env.local already exists — skipping"
+fi
 
 # =============================================================================
 # STEP 3: Create CLAUDE.md in ~/.claude/ (global default for all sessions)
 # =============================================================================
-echo -e "${YELLOW}[4/7] Creating ~/.claude/CLAUDE.md (global fallback) ...${RESET}"
+echo -e "${YELLOW}[4/8] Creating ~/.claude/CLAUDE.md (global fallback) ...${RESET}"
 
 cat > "$CLAUDE_DIR/CLAUDE.md" << EOF
 # NEUTRON EVO OS — Global Context
@@ -189,7 +234,7 @@ echo -e "${GREEN}[✓] ~/.claude/CLAUDE.md created${RESET}"
 # =============================================================================
 # STEP 4: Create global hook script
 # =============================================================================
-echo -e "${YELLOW}[5/7] Creating global hook script ...${RESET}"
+echo -e "${YELLOW}[5/8] Creating global hook script ...${RESET}"
 
 HOOK_SCRIPT="$NEUTRON_HOME/hooks/session-start.sh"
 mkdir -p "$(dirname "$HOOK_SCRIPT")"
@@ -221,10 +266,24 @@ chmod +x "$HOOK_SCRIPT"
 echo -e "${GREEN}[✓] Hook script created at $HOOK_SCRIPT${RESET}"
 
 # =============================================================================
+# STEP 5b: Install MemoryOS CLI globally
+# =============================================================================
+echo -e "${YELLOW}[5b/8] Installing MemoryOS CLI ...${RESET}"
+if [ -d "$NEUTRON_HOME/MemoryOS" ]; then
+    if command -v npm &>/dev/null; then
+        cd "$NEUTRON_HOME/MemoryOS" && npm install -g . 2>/dev/null && echo "  → MemoryOS CLI installed globally" || echo "  → MemoryOS CLI skipped (npm install failed)"
+    else
+        echo "  → MemoryOS CLI skipped (npm not found)"
+    fi
+else
+    echo "  → MemoryOS CLI skipped (not found)"
+fi
+
+# =============================================================================
 # STEP 6: Auto-apply to existing projects
 # Scans for projects with CLAUDE.md and fills in missing NEUTRON files
 # =============================================================================
-echo -e "${YELLOW}[6/7] Auto-applying NEUTRON EVO OS to existing projects ...${RESET}"
+echo -e "${YELLOW}[6/8] Auto-applying NEUTRON EVO OS to existing projects ...${RESET}"
 
 # Files that must exist in every NEUTRON-OS project
 NEUTRON_FILES=(
@@ -307,9 +366,9 @@ fi
 echo -e "${GREEN}[✓] Auto-apply complete: $APPLY_COUNT project(s) updated, $SKIP_COUNT skipped${RESET}"
 
 # =============================================================================
-# STEP 7: Verify
+# STEP 8: Verify & Summary
 # =============================================================================
-echo -e "${YELLOW}[7/7] Verification ...${RESET}"
+echo -e "${YELLOW}[8/8] Verification & Summary ...${RESET}"
 
 ERRORS=0
 
@@ -339,9 +398,10 @@ if [ -d "$NEUTRON_HOME" ]; then
     fi
 fi
 
-# =============================================================================
-# DONE
-# =============================================================================
+if [ -f "$NEUTRON_HOME/.env.local" ]; then
+    echo -e "  ${GREEN}✓${RESET} .env.local template created"
+    echo -e "  ${YELLOW}⚠️  IMPORTANT: Edit $NEUTRON_HOME/.env.local with your API keys!${RESET}"
+fi
 echo ""
 echo -e "${BOLD}${CYAN}╔══════════════════════════════════════════════════════════╗"
 echo "║           NEUTRON EVO OS — INSTALL COMPLETE               ║"

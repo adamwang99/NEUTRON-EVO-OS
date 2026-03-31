@@ -21,7 +21,7 @@
 - **SOFT DELETE FIRST**: Mark as "archived" instead of physical removal
 - User data: **ALWAYS** move to `/memory/archived/` (NEVER delete)
 - System noise (.tmp, .cache): Permanent delete allowed after 3 days unreferenced
-- Require approval if deleting > 10 files simultaneously
+- Require approval if deleting > 100 records simultaneously
 - Mandatory audit log: timestamp, reason, files_affected, archive_location
 
 #### ✏️ Modification Protocol

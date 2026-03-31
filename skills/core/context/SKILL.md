@@ -38,7 +38,7 @@ Manage context loading, injection, and priority for NEUTRON EVO OS across Claude
 | P3 | Daily logs, learned context | Persistent |
 
 ### Anti-Hallucination
-- On any API/library call: use Context Hub (`chub search`) or official docs before outputting code
+- On any API/library call: verify against official documentation before outputting code
 - Never fabricate API parameters; always verify
 - Flag and reject output where factual claims cannot be verified
 

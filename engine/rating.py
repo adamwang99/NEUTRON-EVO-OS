@@ -1,0 +1,176 @@
+"""
+NEUTRON-EVO-OS: Shipment Rating System
+Tracks USER RATINGS for each delivery.
+
+User rating is the PRIMARY quality metric.
+Combined = user_rating + time_to_ship
+
+Rating scale:
+  5 = Excellent — better than expected, no rework
+  4 = Good — does what I need, minor issues
+  3 = Acceptable — works but needed fixes
+  2 = Poor — major issues, significant rework
+  1 = Broken — not what I asked for
+"""
+from __future__ import annotations
+
+import json
+import filelock
+from pathlib import Path
+from datetime import datetime
+from typing import Optional
+
+NEUTRON_ROOT = Path(__file__).parent.parent
+MEMORY_DIR = NEUTRON_ROOT / "memory"
+RATINGS_FILE = MEMORY_DIR / "shipments.json"
+LOCK_FILE = MEMORY_DIR / "shipments.lock"
+
+
+def _load() -> dict:
+    """Load shipment data."""
+    if RATINGS_FILE.exists():
+        try:
+            return json.loads(RATINGS_FILE.read_text())
+        except Exception:
+            return {"shipments": [], "counter": 0}
+    return {"shipments": [], "counter": 0}
+
+
+def _save(data: dict):
+    """Save shipment data atomically."""
+    MEMORY_DIR.mkdir(exist_ok=True)
+    lock = filelock.FileLock(str(LOCK_FILE), timeout=10)
+    with lock:
+        RATINGS_FILE.write_text(json.dumps(data, indent=2, ensure_ascii=False))
+
+
+def record_shipment(
+    project: str,
+    complexity: str = "MEDIUM",
+    steps_completed: list = None,
+    time_to_ship_minutes: float = 0,
+    rating: int = None,
+    rating_notes: str = "",
+    outcome: str = "shipped",
+    discovery_path: str = "",
+    spec_path: str = "",
+) -> dict:
+    """
+    Record a new shipment/delivery.
+
+    Args:
+        project: Project name/title
+        complexity: LOW / MEDIUM / HIGH
+        steps_completed: List of step names completed
+        time_to_ship_minutes: Minutes from /explore to /ship
+        rating: 1-5 user rating (optional, can be added later)
+        rating_notes: User's notes about the rating
+        outcome: shipped | abandoned_after_spec | rework_after_acceptance
+        discovery_path: Path to discovery output
+        spec_path: Path to SPEC.md
+
+    Returns: {status, shipment_id, summary}
+    """
+    data = _load()
+    shipment_id = data["counter"] + 1
+    data["counter"] = shipment_id
+
+    entry = {
+        "id": shipment_id,
+        "timestamp": datetime.now().isoformat(),
+        "project": project,
+        "complexity": complexity,
+        "steps_completed": steps_completed or [],
+        "time_to_ship_minutes": time_to_ship_minutes,
+        "outcome": outcome,
+        "discovery_path": discovery_path,
+        "spec_path": spec_path,
+    }
+
+    if rating is not None:
+        entry["rating"] = rating
+        entry["rating_notes"] = rating_notes
+        entry["rating_timestamp"] = datetime.now().isoformat()
+
+    data["shipments"].append(entry)
+    _save(data)
+
+    return {
+        "status": "recorded",
+        "shipment_id": shipment_id,
+        "entry": entry,
+        "summary": _summarize_data(data),
+    }
+
+
+def add_rating(shipment_id: int, rating: int, notes: str = "") -> dict:
+    """
+    Add user rating to an existing shipment.
+
+    Rating must be 1-5.
+    """
+    if not (1 <= rating <= 5):
+        return {"status": "error", "message": "Rating must be 1-5"}
+
+    data = _load()
+    for s in data["shipments"]:
+        if s["id"] == shipment_id:
+            s["rating"] = rating
+            s["rating_notes"] = notes
+            s["rating_timestamp"] = datetime.now().isoformat()
+            _save(data)
+            return {"status": "updated", "shipment": s, "summary": _summarize_data(data)}
+
+    return {"status": "error", "message": f"Shipment {shipment_id} not found"}
+
+
+def get_shipment(shipment_id: int) -> Optional[dict]:
+    """Get a specific shipment by ID."""
+    data = _load()
+    for s in data["shipments"]:
+        if s["id"] == shipment_id:
+            return s
+    return None
+
+
+def get_recent(n: int = 10) -> list:
+    """Get N most recent shipments."""
+    data = _load()
+    return sorted(data["shipments"], key=lambda s: s.get("timestamp", ""), reverse=True)[:n]
+
+
+def _summarize_data(data: dict) -> dict:
+    """Compute aggregate stats from shipment data."""
+    shipments = data.get("shipments", [])
+    if not shipments:
+        return {
+            "total": 0,
+            "rated": 0,
+            "average_rating": None,
+            "average_time_to_ship_minutes": None,
+            "outcome_breakdown": {},
+        }
+
+    rated = [s for s in shipments if "rating" in s]
+    ratings = [s["rating"] for s in rated]
+    times = [s["time_to_ship_minutes"] for s in shipments if s.get("time_to_ship_minutes")]
+
+    outcomes = {}
+    for s in shipments:
+        o = s.get("outcome", "unknown")
+        outcomes[o] = outcomes.get(o, 0) + 1
+
+    return {
+        "total": len(shipments),
+        "rated": len(rated),
+        "unrated": len(shipments) - len(rated),
+        "average_rating": round(sum(ratings) / len(ratings), 1) if ratings else None,
+        "average_time_to_ship_minutes": round(sum(times) / len(times), 1) if times else None,
+        "outcome_breakdown": outcomes,
+        "last_shipment": shipments[-1] if shipments else None,
+    }
+
+
+def summarize() -> dict:
+    """Return full summary for UI or reporting."""
+    return _summarize_data(_load())

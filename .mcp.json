@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "NEUTRON-EVO-OS": {
+      "command": "python3",
+      "args": ["-m", "mcp_server"],
+      "env": {
+        "NEUTRON_ROOT": "/mnt/data/projects/ai-context-master"
+      }
+    }
+  }
+}

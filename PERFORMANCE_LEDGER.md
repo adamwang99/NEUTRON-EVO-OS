@@ -1,39 +1,35 @@
 # NEUTRON-EVO-OS: Performance Ledger
 
 > ∫f(t)dt — Functional Credibility Over Institutional Inertia
-> Last Updated: 2026-03-30
+> Last Updated: 2026-03-31
 
 ---
 
-## Agent / Skill Credibility Index
+## USER RATINGS — Primary Quality Metric
 
-| Skill | CI Score | Tasks Completed | Last Active |
-|-------|----------|-----------------|-------------|
-| context | 55 | 1 | 2026-03-30 |
-| memory | 50 | 0 | - |
-| workflow | 50 | 0 | - |
-| engine | 75 | 1 | 2026-03-30 |
+**User satisfaction is the only metric that matters for shipped work.**
+Every delivery gets rated 1-5 by the user.
 
-### CI Score Reference
+| # | Date | Project | Rating | Notes | Time-to-Ship |
+|---|------|---------|--------|-------|--------------|
+| — | — | — | — | — | — |
 
-| CI Range | Status | Behavior |
-|----------|--------|---------|
-| >= 70 | Trusted | Auto-approved execution |
-| 40-69 | Normal | Standard 5-step workflow |
-| 30-39 | Restricted | Explicit verification gate |
-| < 30 | **BLOCKED** | Requires human review |
+**Rating Guide:**
+- 5 = Excellent — better than expected, no rework
+- 4 = Good — does what I need, minor issues
+- 3 = Acceptable — works but needed fixes
+- 2 = Poor — major issues, significant rework
+- 1 = Broken — not what I asked for
 
-### CI Update Rules
+---
 
-| Event | CI Delta |
-|-------|----------|
-| Verified successful task | +5 |
-| Failed or reverted task | -10 |
-| Model Slop delivered | -10 |
-| Hallucination detected | STOP + escalate |
-| Full clean workflow (all 5 steps) | +15 |
-| Dream Cycle completed | +10 |
-| Archive failure (user data) | -20 + STOP |
+## SHIPMENTS — Delivery History
+
+| Date | Project | Complexity | Steps | User Rating | Time-to-Ship | Outcome |
+|------|---------|-------------|-------|-------------|--------------|---------|
+| — | — | — | — | — | — | — |
+
+**Outcomes:** `shipped` | `abandoned_after_spec` | `rework_after_acceptance`
 
 ---
 
@@ -41,19 +37,53 @@
 
 | Metric | Value |
 |--------|-------|
-| Total Tasks | 2 |
-| System Uptime | - |
-| Dream Cycles | 0 |
-| Last Dream | - |
-| Overall System CI | 70.0 |
+| Total Deliveries | 0 |
+| Abandoned at SPEC | 0 |
+| Rework Cycles | 0 |
+| Average Rating | — |
+| Avg Time-to-Ship | — |
 
 ---
 
-## Recent Activity Log
+## Skill Credibility Index (Secondary — AI health only)
 
-_Entries added after each /ship step._
+**For AI internal governance. User satisfaction = real success metric.**
 
-| Date | Skill | Task | CI Delta | Notes |
-|------|-------|------|----------|-------|
-| 2026-03-30 | engine | System-wide installation v4.1.0 | +15 | install-global.sh, VS Code extension, PreLoadMemory fix |
-| 2026-03-30 | context | OCTA workspace audit & fix | +5 | PreLoadMemory upgrade, missing files verified |
+| Skill | CI Score | Last Active |
+|-------|----------|-------------|
+| context | 50 | — |
+| memory | 50 | — |
+| workflow | 50 | — |
+| engine | 50 | — |
+| checkpoint | 50 | — |
+| discovery | 50 | — |
+| acceptance_test | 50 | — |
+
+| CI Range | Status |
+|----------|--------|
+| >= 70 | Trusted |
+| 40-69 | Normal |
+| 30-39 | Degraded |
+| < 30 | **Broken** |
+
+### CI Update Rules (AI self-governance only)
+
+| Event | CI Delta |
+|-------|----------|
+| Skill used in successful delivery | +2 |
+| Skill caused acceptance failure | -5 |
+| Full clean workflow (all steps) | +5 |
+| Discovery interview completed | +3 |
+| Acceptance passed first try | +5 |
+
+---
+
+## USER DECISIONS LOG
+
+**Only USER DECISIONS are preserved — not skill executions.**
+
+| Date | Decision | Context |
+|------|----------|---------|
+| — | — | — |
+
+---

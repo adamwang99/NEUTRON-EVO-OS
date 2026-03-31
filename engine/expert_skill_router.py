@@ -3,13 +3,18 @@ NEUTRON-EVO-OS: Expert Skill Router
 Audits PERFORMANCE_LEDGER.md before executing any skill.
 Routes tasks to appropriate skills based on CI scores and availability.
 """
+from __future__ import annotations
+
 import os
 import re
+import filelock
 from pathlib import Path
 from typing import Optional
 
-LEDGER_PATH = Path(__file__).parent.parent / "PERFORMANCE_LEDGER.md"
-SKILLS_DIR = Path(__file__).parent.parent / "skills"
+NEUTRON_ROOT = Path(os.environ.get("NEUTRON_ROOT", Path(__file__).parent.parent))
+LEDGER_PATH = NEUTRON_ROOT / "PERFORMANCE_LEDGER.md"
+LOCK_PATH = LEDGER_PATH.with_suffix(".lock")
+SKILLS_DIR = NEUTRON_ROOT / "skills"
 
 # CI thresholds
 CI_FULL_TRUST = 70
@@ -52,16 +57,17 @@ def get_all_skill_entries() -> dict:
         return entries
 
     content = LEDGER_PATH.read_text()
+    # Support both 4-col format (skill|CI|tasks|last_active) and 2-col format (skill|CI)
     pattern = re.compile(
-        r"^\|\s*(\w+)\s*\|\s*(\d+)\s*\|\s*(\d+)\s*\|\s*(.*?)\s*\|",
+        r"^\|\s*(\w+)\s*\|\s*(\d+)\s*\|",
         re.MULTILINE,
     )
     for match in pattern.finditer(content):
         skill = match.group(1)
         entries[skill] = {
             "CI": int(match.group(2)),
-            "tasks_completed": int(match.group(3)),
-            "last_active": match.group(4).strip(),
+            "tasks_completed": 0,
+            "last_active": "-",
         }
     return entries
 
@@ -80,10 +86,22 @@ def route_task(task: str, context: dict = None) -> dict:
 
     # --- Skill mapping ---
     skill_map = {
-        "context": ["context", "load", "inject", "priority", "claude.md", "ide window"],
-        "memory": ["memory", "log", "archive", "daily", "remember", "recall"],
-        "workflow": ["workflow", "/explore", "/spec", "/build", "/verify", "/ship", "step"],
-        "engine": ["engine", "router", "route", "ci", "audit", "observer", "dream"],
+        "context":   ["context", "load", "inject", "priority", "claude.md", "ide window",
+                      "compact", "compression", "survive"],
+        "memory":    ["memory", "log", "archive", "daily", "remember", "recall",
+                      "search", "prune", "distill", "cookbook", "cookbooks", "decisions"],
+        "workflow":  ["workflow", "/explore", "/spec", "/build", "/verify", "/ship",
+                      "/acceptance", "/auto", "step", "specification", "5-step", "pipeline",
+                      "user review", "approve spec", "auto-confirm", "auto confirm",
+                      "skip review", "automatic approval"],
+        "engine":    ["engine", "router", "route", "ci", "audit", "observer", "dream",
+                      "status", "health", "stats", "performance ledger"],
+        "checkpoint":["checkpoint", "checkpointing", "handoff", "resume", "state save"],
+        "discovery": ["discovery", "interview", "clarify", "questions", "understand",
+                      "what i need", "what do you want", "requirements", "user story",
+                      "discover", "clarifying", "ask questions", "/discovery"],
+        "acceptance_test": ["acceptance", "test", "verify", "user test", "acceptance test",
+                           "/acceptance", "run it", "does it work", "user verification"],
     }
 
     candidates = []
@@ -126,71 +144,58 @@ def route_task(task: str, context: dict = None) -> dict:
         "blocked": blocked,
         "block_reason": block_reason,
         "CI": ci,
+        "_routing_confidence": round(confidence, 2),  # caller can pass to skill_execution.run
     }
 
 
-def execute_skill(skill_path: str, task: str) -> dict:
+def execute_skill(skill_path: str, task: str, context: dict = None) -> dict:
     """
     Execute a skill after CI audit passes.
+    Delegates to skill_execution.run() for the actual logic.
     skill_path: e.g. 'skills/core/workflow/SKILL.md'
-    Returns: {status, output, ci_delta}
+    Returns: {status, output, ci_delta, skill, duration_ms}
     """
-    from datetime import datetime
-
-    skill_file = SKILLS_DIR / skill_path
-    if not skill_file.exists():
-        return {"status": "error", "output": f"Skill not found: {skill_path}", "ci_delta": 0}
-
-    skill_name = skill_path.split("/")[1]  # e.g. 'workflow' from 'core/workflow/SKILL.md'
-    entry = get_ledger_entry(skill_name)
-
-    if entry["CI"] < CI_BLOCKED:
-        return {
-            "status": "blocked",
-            "output": f"Skill '{skill_name}' CI={entry['CI']} is below threshold. Human review required.",
-            "ci_delta": 0,
-        }
-
-    # Skill execution would be handled by the agent reading SKILL.md
-    # Here we return metadata for the routing agent to use
-    return {
-        "status": "ready",
-        "skill": skill_name,
-        "skill_file": str(skill_file),
-        "CI": entry["CI"],
-        "ci_delta": 0,  # delta applied by workflow skill after execution
-    }
+    from engine import skill_execution
+    # skill_path: 'skills/core/<name>/SKILL.md' — index 2 = skill name
+    skill_name = skill_path.split("/")[2]
+    # Route first to get confidence score
+    route_result = route_task(task, context)
+    ctx = dict(context) if context else {}
+    ctx["_routing_confidence"] = route_result.get("confidence", 1.0)
+    return skill_execution.run(skill_name, task, ctx)
 
 
 def update_ci(skill_name: str, delta: int) -> dict:
     """
     Update CI score for a skill in PERFORMANCE_LEDGER.md.
-    Returns updated entry.
+    Returns updated entry. Thread/process safe via file lock.
     """
     if not LEDGER_PATH.exists():
         return {"CI": 50, "error": "Ledger not found"}
 
-    content = LEDGER_PATH.read_text()
-    entry = get_ledger_entry(skill_name)
-    new_ci = max(0, min(100, entry["CI"] + delta))
-    new_tasks = entry["tasks_completed"] + (1 if delta > 0 else 0)
-    from datetime import datetime
+    lock = filelock.FileLock(str(LOCK_PATH), timeout=10)
+    with lock:
+        content = LEDGER_PATH.read_text()
+        entry = get_ledger_entry(skill_name)
+        new_ci = max(0, min(100, entry["CI"] + delta))
+        new_tasks = entry["tasks_completed"] + (1 if delta > 0 else 0)
+        from datetime import datetime
 
-    new_active = datetime.now().strftime("%Y-%m-%d")
+        new_active = datetime.now().strftime("%Y-%m-%d")
 
-    # Regex replace the skill row
-    pattern = re.compile(
-        rf"(\|\s*{re.escape(skill_name)}\s*\|\s*)\d+(\s*\|\s*)\d+(\s*\|\s*)[^|]+(\s*\|)",
-        re.IGNORECASE,
-    )
-    replacement = rf"\g<1>{new_ci}\g<2>{new_tasks}\g<3>{new_active}\4"
-    new_content, count = pattern.subn(replacement, content)
+        # Regex replace the skill row
+        pattern = re.compile(
+            rf"(\|\s*{re.escape(skill_name)}\s*\|\s*)\d+(\s*\|\s*)\d+(\s*\|\s*)[^|]+(\s*\|)",
+            re.IGNORECASE,
+        )
+        replacement = rf"\g<1>{new_ci}\g<2>{new_tasks}\g<3>{new_active}\4"
+        new_content, count = pattern.subn(replacement, content)
 
-    if count == 0:
-        return {"CI": entry["CI"], "error": f"Skill '{skill_name}' not found in ledger"}
+        if count == 0:
+            return {"CI": entry["CI"], "error": f"Skill '{skill_name}' not found in ledger"}
 
-    LEDGER_PATH.write_text(new_content)
-    return {"skill": skill_name, "CI": new_ci, "tasks_completed": new_tasks, "last_active": new_active}
+        LEDGER_PATH.write_text(new_content)
+        return {"skill": skill_name, "CI": new_ci, "tasks_completed": new_tasks, "last_active": new_active}
 
 
 def audit() -> dict:

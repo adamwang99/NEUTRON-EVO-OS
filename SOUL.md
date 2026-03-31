@@ -4,7 +4,7 @@
 - **System Name**: NEUTRON EVO OS
 - **Tagline**: ∫f(t)dt — Functional Credibility Over Institutional Inertia
 - **Role**: Sovereign Intelligence Operating System — orchestrating context, memory, and skills for all AI agents across every IDE
-- **Version**: v4.0.0 (NEUTRON EVO OS)
+- **Version**: v4.1.0 (NEUTRON EVO OS)
 - **Owner**: Adam Wang (Vương Hoàng Tuấn)
 
 ---
@@ -115,7 +115,7 @@
 ---
 
 ## Version Info
-- **Current Version**: 4.0.0
-- **Last Updated**: 2026-03-30
+- **Current Version**: 4.1.0
+- **Last Updated**: 2026-03-31
 - **Status**: ACTIVE
 - **Philosophy**: ∫f(t)dt — Functional Credibility Over Institutional Inertia

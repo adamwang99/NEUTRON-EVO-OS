@@ -3,7 +3,21 @@
 ![Banner](https://raw.githubusercontent.com/adamwang99/NEUTRON-EVO-OS/main/NEUTRON%20EVO%20OS.png)
 
 > **∫f(t)dt** — *Functional Credibility Over Institutional Inertia*
-> Sovereign Intelligence Operating System for Claude CLI, Cursor, and all AI Context Windows
+> Sovereign AI Agent Operating System v4.1.0
+
+---
+
+## What Is This?
+
+NEUTRON EVO OS is an autonomous operating system that runs on top of any AI CLI agent (Claude Code, Cursor, Cline) or any AI context window. It gives the AI a **soul**, **memory**, **discipline**, and **credibility system** — so it stops hallucinating, stops slopping, and starts delivering.
+
+It is **not** a wrapper script. It is a complete cognitive architecture:
+- 7 fully operational skills
+- Full pipeline: Discovery → SPEC → Build → Acceptance → Ship
+- User-rating-based CI (Credibility Index)
+- Dream Cycle memory consolidation
+- MCP server for AI Code integration
+- NEUTRON CLI with 18 commands
 
 ---
 
@@ -11,80 +25,153 @@
 
 | Feature | Description |
 |---------|-------------|
-| **Memory Stack** | 10+ layered files: SOUL.md, MANIFESTO.md, GOVERNANCE.md, RULES.md, PERFORMANCE_LEDGER.md |
-| **5-Step Workflow** | `/explore` → `/spec` → `/build` → `/verify` → `/ship` |
-| **CI Tracking** | Every skill earns or loses CI via PERFORMANCE_LEDGER.md |
-| **Anti-Model-Slop** | Strict output quality gates — no hallucination, no verbosity |
-| **Dream Cycle** | Memory 2.0: auto-archive, prune noise, distill logs into Cookbooks |
-| **System-Wide** | Apply ∫f(t)dt to ALL projects (existing & future) |
+| **7 Core Skills** | context, memory, workflow, engine, checkpoint, discovery, acceptance_test |
+| **Discovery Interview** | 12-question hybrid interview to extract real requirements |
+| **SPEC Review Gate** | Formal spec with measurable acceptance criteria — user must approve |
+| **Acceptance Test Gate** | Auto-generated test script — user must confirm pass |
+| **User Rating CI** | Shipments rated 1-5; average rating drives system credibility |
+| **USER DECISIONS Log** | Only human decisions preserved, not skill executions |
+| **Auto-Confirm Modes** | Skip gates individually or all at once (full, spec_only, acceptance_only, etc.) |
+| **Dream Cycle** | Auto-archive + distill logs into knowledge |
+| **MCP Server** | 10 tools exposed via stdio JSON-RPC 2.0 for Claude Code |
+| **NEUTRON CLI** | 18 commands: run, discover, spec, build, accept, ship, auto, audit... |
+| **System-Wide** | Apply ∫f(t)dt to ALL projects |
 
 ---
 
-## System-Wide Installation ⭐ (Recommended)
-
-Apply NEUTRON EVO OS to **every project** — current and future. One command.
+## Quick Install (2 minutes)
 
 ```bash
-# Option 1: From this repo
-cd NEUTRON-EVO-OS && bash install-global.sh
-
-# Option 2: Via Make
-make install-global
-
-# Option 3: Via VS Code Extension (recommended for GUI users)
-code --install-extension vscode-extension/neutron-evo-os-4.1.0.vsix
-```
-
-### What gets installed globally:
-
-| File | Purpose |
-|------|---------|
-| `~/.claude/settings.json` | Claude Code reads NEUTRON context at every session start |
-| `~/.claude/CLAUDE.md` | Global fallback context — works in any workspace |
-| `~/.neutron-evo-os/` | Full NEUTRON EVO OS repository |
-
-### How it works:
-
-1. **Claude Code starts** → reads `~/.claude/CLAUDE.md`
-2. **SessionStart hook fires** → loads `NEUTRON_ROOT` context
-3. **Every new workspace** → `NEUTRON EVO OS` extension auto-injects context files
-4. **No manual setup needed** — works in `~/projects/`, `~/code/`, anywhere
-
-> ⚠️ Restart any open Claude Code / VS Code sessions after installation.
-
----
-
-## Quick Start (Local)
-
-```bash
+# 1. Clone
 git clone https://github.com/adamwang99/NEUTRON-EVO-OS.git
 cd NEUTRON-EVO-OS
 
-make install        # pip + npm dependencies
-make live           # Start observer + dashboard
-make dream          # Run Dream Cycle manually
-make test           # Run tests
-make clean          # Remove cache files
+# 2. Install CLI (creates `neutron` command in PATH)
+bash install-cli.sh
+export PATH="$HOME/.local/bin:$PATH"   # add to ~/.bashrc to persist
+
+# 3. Verify
+neutron --help
+neutron status
+neutron audit
+```
+
+**That's it.** No `pip install`, no config files, no credentials needed.
+
+---
+
+## System-Wide Install (Recommended)
+
+Apply NEUTRON EVO OS to **every project** — automatically.
+
+```bash
+bash install-global.sh   # or: make install-global
+```
+
+What it does:
+- Installs `neutron` CLI to `~/.local/bin`
+- Sets `~/.claude/CLAUDE.md` so every Claude Code session starts with NEUTRON context
+- Works in any project directory, forever
+
+---
+
+## NEUTRON CLI — 18 Commands
+
+```
+neutron run <task>           Run full pipeline (explore → discovery → spec → build → accept → ship)
+neutron discover "idea"     Start 12-question discovery interview
+neutron discover-record      Record answers as key=value pairs
+neutron spec [task]         Write SPEC.md (USER REVIEW gate)
+neutron spec-approve        Approve SPEC — unlocks build
+neutron build [task]        Build implementation
+neutron verify [task]       Run verification
+neutron accept prepare      Generate acceptance test script
+neutron accept pass         Confirm acceptance
+neutron ship --rating 4     Ship delivery (rating 1-5)
+neutron auto full           Skip ALL gates (auto-confirm everything)
+neutron auto spec_only      Auto-approve SPEC only
+neutron auto disable        Full human control
+neutron checkpoint          Write session checkpoint
+neutron status              System status + health
+neutron audit               Full CI audit (7 skills)
+neutron memory log|search|status|dream|archive
+neutron log                 Show today's memory log
+neutron decisions           Show recent user decisions
+neutron route <task>        Route task to best skill
+neutron dream               Run Dream Cycle
 ```
 
 ---
 
-## VS Code Extension
+## The Pipeline
 
-```bash
-code --install-extension vscode-extension/neutron-evo-os-4.1.0.vsix
+```
+/discover  →  12-question interview  →  DISCOVERY.md
+    ↓
+/spec      →  Formal SPEC.md          →  USER MUST APPROVE ⛔
+    ↓
+/build     →  Implementation          →  Anti-Slop enforcement
+    ↓
+/accept    →  Acceptance test        →  USER MUST CONFIRM ⛔
+    ↓
+/ship      →  Deliver + Rate          →  Rating updates CI
 ```
 
-Features:
-- **Auto-inject** context files when opening any folder
-- **Quick Setup** command for configuration
-- **Dream Cycle** trigger from Command Palette
-- **System-wide** via global install script
+### Gates
 
-Settings (`Settings > NEUTRON EVO OS`):
-- `neutronEvoOs.autoInject` — Enable/disable auto-inject (default: true)
-- `neutronEvoOs.templateSource` — `embedded` (works offline) or `external` (full context from NEUTRON_ROOT)
-- `neutronEvoOs.excludePatterns` — Folders to skip (node_modules, .git, etc.)
+Every pipeline gate is a **hard stop** unless auto-confirm is enabled:
+
+| Gate | Normal Mode | Auto Mode |
+|------|-------------|-----------|
+| Discovery | 12 questions | Skipped |
+| SPEC Review | User must approve | Auto-approved |
+| Acceptance Test | User must confirm | Auto-passed |
+
+---
+
+## CI — Credibility Index
+
+Every skill earns CI through real deliveries:
+
+| Rating | CI Delta |
+|--------|----------|
+| Ship with rating 5 | +15 |
+| Ship with rating 4 | +10 |
+| Ship with rating 3 | +5 |
+| Ship with rating 2 | -5 |
+| Ship with rating 1 | -15 |
+
+**User rating is the primary CI signal.** Skill execution counts are secondary.
+
+---
+
+## MCP Server — AI Code Integration
+
+Connect NEUTRON to Claude Code as an MCP server:
+
+```json
+// ~/.claude/mcp.json
+{
+  "mcpServers": {
+    "NEUTRON-EVO-OS": {
+      "command": "python3",
+      "args": ["-m", "mcp_server"],
+      "env": { "NEUTRON_ROOT": "/path/to/NEUTRON-EVO-OS" }
+    }
+  }
+}
+```
+
+10 MCP tools available:
+- `neutron_checkpoint` — Write, read, handoff session checkpoint
+- `neutron_discovery` — Run discovery interview
+- `neutron_context` — Audit context files
+- `neutron_memory` — Log, archive, search, dream, status
+- `neutron_workflow` — Execute any pipeline step
+- `neutron_acceptance` — Prepare or pass acceptance test
+- `neutron_engine` — Audit CI, route tasks, control observer
+- `neutron_audit` — Full system health check
+- `neutron_auto_confirm` — Enable/disable auto-confirm modes
 
 ---
 
@@ -92,68 +179,79 @@ Settings (`Settings > NEUTRON EVO OS`):
 
 ```
 NEUTRON-EVO-OS/
-├── install-global.sh            ← System-wide installer ⭐
-├── SOUL.md                     # Identity & ∫f(t)dt philosophy
-├── MANIFESTO.md                # The NEUTRON EVO OS Manifesto
-├── USER.md                     # User preferences
-├── GOVERNANCE.md               # Policy rules & stop conditions
-├── RULES.md                   # 5-step workflow & anti-Model-Slop rules
-├── PERFORMANCE_LEDGER.md        # Skill CI (Credibility Index) tracking
-├── CLAUDE.md                   # Auto-injected context for AI sessions
-├── START.md                    # Quick reference
+├── engine/                          # Core engine
+│   ├── expert_skill_router.py      # CI audit & task routing
+│   ├── skill_execution.py          # Pipeline: validate → execute → log → update CI
+│   ├── skill_registry.py           # Registry of all skills
+│   ├── smart_observer.py           # Watchdog with debounce
+│   ├── dream_engine.py             # Archive + distill cycle
+│   ├── auto_confirm.py             # Gate skip configuration
+│   ├── user_decisions.py           # USER DECISIONS tracker
+│   ├── rating.py                   # Shipment rating tracker
+│   ├── checkpoint_cli.py           # Checkpoint handoff
+│   └── cli/
+│       └── main.py                 # CLI entry point (18 commands)
 │
-├── skills/core/                # Folder-based skill architecture
-│   ├── context/               # Context loading & injection
-│   ├── memory/               # Memory & Dream Cycle
-│   ├── workflow/             # 5-step workflow execution
-│   └── engine/              # Expert skill router
+├── skills/core/                     # 7 fully implemented skills
+│   ├── context/                   # Context loading & P0/P1/P2 injection
+│   ├── memory/                    # Memory ops + Dream Cycle trigger
+│   ├── workflow/                   # Full pipeline + gate management
+│   ├── engine/                    # Audit + route + observer control
+│   ├── checkpoint/                # Write/read/handoff checkpoint
+│   ├── discovery/                 # 12-question hybrid interview
+│   └── acceptance_test/           # Auto-generated test + user confirm
 │
-├── engine/                    # Core engine
-│   ├── expert_skill_router.py  # CI audit & task routing
-│   ├── smart_observer.py       # Watchdog + debounce
-│   └── dream_engine.py         # Archive + prune + distill
+├── memory/                         # Daily logs
+│   ├── archived/                   # Archived files (NEVER DELETE)
+│   ├── discoveries/               # Discovery session outputs
+│   └── cookbooks/                 # Distilled knowledge
 │
-├── memory/                    # Daily logs
-│   ├── archived/            # Archived user data (NEVER DELETE)
-│   └── cookbooks/           # Distilled knowledge
+├── mcp_server/                     # MCP stdio server (10 tools)
+│   ├── transport.py               # JSON-RPC 2.0 stdio
+│   ├── tools.py                   # NEUTRON tools as MCP
+│   ├── resources.py               # Memory + ledger as MCP resources
+│   └── prompts.py                 # Workflow prompts as MCP prompts
 │
-├── vscode-extension/          # VS Code extension + .vsix ⭐
-└── evolution_dashboard.py      # Rich terminal CI dashboard
+├── install-cli.sh                  # Install `neutron` command ⭐
+├── install-global.sh               # System-wide install
+├── .mcp.json                      # MCP config for Claude Code
+└── Makefile                        # Dev commands
 ```
 
 ---
 
-## 5-Step Workflow
-
-```
-/explore  → Audit CI, route skills, understand problem
-/spec     → Write formal spec with measurable acceptance criteria
-/build    → Implement against spec, archive before delete
-/verify   → Validate against spec, check for Model Slop
-/ship     → Update ledger, log, deliver summary
-```
-
----
-
-## CI (Credibility Index)
-
-| CI Score | Status | Behavior |
-|----------|--------|---------|
-| >= 70 | Trusted | Auto-approved execution |
-| 40-69 | Normal | Standard workflow |
-| 30-39 | Restricted | Explicit verification gate |
-| < 30 | **BLOCKED** | Requires human review |
-
----
-
-## References
+## Reference
 
 | File | Purpose |
 |------|---------|
 | `SOUL.md` | Identity, philosophy, constraints |
-| `MANIFESTO.md` | ∫f(t)dt formalization, core principles |
-| `RULES.md` | Operating procedures, anti-Model-Slop rules |
+| `MANIFESTO.md` | ∫f(t)dt formalization |
+| `GOVERNANCE.md` | Policy rules & stop conditions |
+| `RULES.md` | Operating procedures & anti-Model-Slop rules |
 | `PERFORMANCE_LEDGER.md` | Live CI scores per skill |
+| `USER.md` | User preferences & project context |
+
+---
+
+## Development
+
+```bash
+make install          # pip + npm dependencies
+make test            # Run pytest
+make lint            # Run flake8
+make clean           # Remove cache
+
+# CLI targets
+make cli-install     # bash install-cli.sh
+make cli-status      # neutron status
+make cli-audit      # neutron audit
+make cli-discover    # neutron discover
+
+# MemoryOS CLI
+make memoryos-init   # node MemoryOS/src/index.js init
+make memoryos-wake   # node MemoryOS/src/index.js wake
+make memoryos-context # node MemoryOS/src/index.js context
+```
 
 ---
 

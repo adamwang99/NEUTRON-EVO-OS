@@ -160,6 +160,62 @@ DELETE, MODIFY_PRODUCTION, DEPLOY
 
 ---
 
+## 9. Change Process
+
+All governance changes (GOVERNANCE.md, RULES.md, CONTRIBUTING.md, this file)
+must follow this 4-step process:
+
+### Step 1 — Proposal
+Write a pull request or GitHub issue with:
+- **What** is changing (exact file + section + current text → proposed text)
+- **Why** it is changing (justification, evidence of a real problem)
+
+### Step 2 — Justification Required
+Every change must cite:
+- Which SOUL.md or MANIFESTO.md principle it serves
+- Evidence: bug, inconsistency, missing coverage, or new requirement
+- Why preserving the status quo is worse risk
+
+### Step 3 — Peer Review
+- **Files SOUL.md, MANIFESTO.md, GOVERNANCE.md**: Review required from any agent
+  with CI ≥ 70 on the `engine` skill
+- **Files RULES.md, PERFORMANCE_LEDGER.md**: Any trusted agent (CI ≥ 40)
+- Reviewer verifies: SOUL alignment, no CI manipulation, no authority creep
+- Reviewer approves or requests changes in writing
+
+### Step 4 — Ratification
+- After approval: Adam Wang (system owner) merges
+- Change takes effect immediately on merge
+- Document the decision in `HEARTBEAT.md` with date, rationale, and approver
+- Governance changes retroactively applied to past violations are **invalid**
+
+### Emergency Override
+In a genuine incident (data loss, security breach, system failure), any agent
+may enact immediate changes without full review, but must:
+1. Document the change and rationale in `memory/YYYY-MM-DD.md` within 1 hour
+2. Notify Adam Wang within 1 hour
+3. Submit a full proposal within 24 hours for post-hoc ratification
+
+---
+
+## 10. Roles
+
+| Role | Who | Authority |
+|------|-----|-----------|
+| **System Owner** | Adam Wang | Final approval on all governance changes, succession decisions |
+| **Approver** | Any agent with engine CI ≥ 70 | Peer review sign-off on SOUL/MANIFESTO/GOVERNANCE changes |
+| **Contributor** | Any agent | Propose changes, update CI, add skills per CONTRIBUTING.md |
+| **Reviewer** | Any trusted agent (CI ≥ 40) | Peer review on RULES.md and PERFORMANCE_LEDGER.md |
+
+### Succession
+If Adam Wang is unavailable for > 30 days:
+1. System continues operating under current governance
+2. Any trusted agent (CI ≥ 70, engine skill) may act as interim Approver
+3. Governance changes require consensus of 2 approvers + Adam Wang ratification on return
+4. No fundamental changes (SOUL.md, MANIFESTO.md) until succession resolved
+
+---
+
 ## Quick Reference Card
 
 ```

@@ -471,9 +471,13 @@ async function openDocs() {
 }
 
 async function triggerDream() {
-	vscode.window.showInformationMessage(
-		'NEUTRON EVO OS Dream Cycle: Run `make dream` in the NEUTRON_ROOT folder.'
-	);
+	const neutronRoot =
+		process.env['NEUTRON_ROOT'] ||
+		path.join(__dirname, '..', '..', '..', '..');
+	const term = vscode.window.createTerminal('NEUTRON Dream');
+	term.sendText(`cd "${neutronRoot}" && make dream`);
+	term.show();
+	vscode.window.showInformationMessage('NEUTRON Dream Cycle triggered in terminal.');
 }
 
 async function showStatus() {

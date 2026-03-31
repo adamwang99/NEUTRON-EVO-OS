@@ -1,138 +1,227 @@
 ---
 name: workflow
 type: core
-version: 1.0.0
+version: 2.0.0
 CI: 50
-dependencies: [context, memory, engine]
+dependencies: [context, memory, engine, discovery, acceptance_test]
 last_dream: null
 ---
 
-## Execution Logic
+## Execution Logic — NEUTRON EVO OS Workflow v2.0
 
 ### Purpose
-Execute the NEUTRON EVO OS 5-step workflow: `/explore` → `/spec` → `/build` → `/verify` → `/ship`
+Execute the structured project delivery workflow with human-in-the-loop gates.
+Every non-trivial project goes through ALL 5 steps. No skipping.
 
-### Workflow Gates
-Each step is a gate — the next step does not begin until the current step is verified complete.
+---
+
+## The 5-Step Pipeline
+
+```
+USER IDEA
+    ↓
+/explore     → Understand problem space, check system health
+    ↓
+/discovery    → Structured interview: AI asks 12 clarifying questions
+    ↓
+/spec        → Write SPEC.md → USER REVIEW (HARD GATE — must approve before build)
+    ↓
+/build       → Implement exactly what SPEC says
+    ↓
+/acceptance_test  → USER runs the app, verifies it solves their problem
+    ↓
+/ship        → Deliver, archive, update rating
+    ↓
+ITERATE (if acceptance failed) or DONE
+```
+
+### Key Principle: USER REVIEW Gate
+> **The AI NEVER builds without the user's explicit approval of the SPEC.**
+> This is the single most important gate in the entire workflow.
+> Build = user has approved SPEC. No approval = no build.
 
 ---
 
 ## Step 1: /explore
 
-**Goal**: Understand the problem space fully before writing a line of code.
+**Goal**: Verify system health and understand the problem space.
 
 **Actions**:
-1. Read SOUL.md, MANIFESTO.md, USER.md (identity check)
-2. Audit PERFORMANCE_LEDGER.md for relevant skill CI scores
-3. Call `engine/expert_skill_router.route_task()` to identify required skills
-4. If any required skill has CI < 30: **BLOCK** — request human review
-5. Research: read existing code, docs, prior logs
-6. Identify constraints, dependencies, and blockers
-7. Draft a problem statement
+1. Read SOUL.md, MANIFESTO.md (identity check)
+2. Audit PERFORMANCE_LEDGER.md — block if any required skill CI < 30
+3. Audit memory/ — find relevant prior decisions
+4. Read existing codebase (if project exists)
+5. Draft a 1-paragraph problem statement
 
-**Exit gate**: Problem statement is written and human-approved (or CI >= 70 for auto-approve).
+**Exit gate**: Problem statement written. System ready.
 
 ---
 
-## Step 2: /spec
+## Step 2: /discovery
 
-**Goal**: Define exactly what will be built before any implementation begins.
+**Goal**: Before writing SPEC, ensure the AI understands what the user actually needs.
 
 **Actions**:
-1. Write formal specification in `/spec/YYYY-MM-DD_<task-name>.md`
-2. Define measurable acceptance criteria (e.g., "returns X when given Y", not "works well")
-3. List constraints: performance, security, compatibility
-4. Identify edge cases and define expected behavior for each
-5. Get human approval if > 10 file changes or new external dependencies
+1. Call `discovery(action='start', task='<user idea>')`
+2. Present 3-sentence confirmation summary to user
+3. Ask 12 structured clarifying questions (12 required, 4 optional)
+4. Record answers as they come in
+5. When all required questions answered → generate complexity estimate + risks
+6. Write output to `memory/discoveries/{date}/{slug}/DISCOVERY.md`
 
-**Spec template**:
-```markdown
-## Problem
-[1-2 sentence problem statement]
+**Exit gate**: All 12 required questions answered. User confirmed summary. Discovery output saved.
 
-## Solution
-[High-level approach]
+---
 
-## Acceptance Criteria
-- [ ] Criterion 1 (measurable)
-- [ ] Criterion 2 (measurable)
+## Step 3: /spec
 
-## Edge Cases
-- Case A: expected behavior
+**Goal**: Define exactly what will be built — in writing, for user approval.
 
-## Constraints
-- [List any limitations]
+**Actions**:
+1. Read discovery output from `memory/discoveries/`
+2. Write `SPEC.md` with:
+   - Problem statement
+   - Success criteria (measurable, not "works well")
+   - Tech stack (AI recommends, user confirms)
+   - Out of scope (explicit exclusions)
+   - Acceptance criteria — what USER will verify at acceptance test
+   - Edge cases
+   - Files to create/modify/delete
+3. Present SPEC to user for review
 
-## Files Affected
-- [List files to create/modify/delete]
+**HARD GATE — USER REVIEW**:
+```
+┌─────────────────────────────────────────────────────┐
+│  SPEC REVIEW                                          │
+│                                                      │
+│  Read SPEC.md above. Answer ONE of:                  │
+│                                                      │
+│  A) APPROVE — "Build it."                            │
+│     → /build is now UNLOCKED                          │
+│                                                      │
+│  B) REQUEST CHANGES — "Change X, Y before building"  │
+│     → AI revises SPEC, presents again                │
+│     → Loop until USER APPROVES                        │
+│                                                      │
+│  C) ABANDON — "Not what I need"                       │
+│     → Workflow ends, nothing built                    │
+└─────────────────────────────────────────────────────┘
 ```
 
-**Exit gate**: Spec is written, acceptance criteria are measurable, human-approved.
+**Exit gate**: User answered "APPROVE" or equivalent. Gate recorded in memory.
 
 ---
 
-## Step 3: /build
+## Step 4: /build
 
-**Goal**: Implement exactly what the spec says — no more, no less.
+**Goal**: Implement exactly what SPEC.md says — no more, no less.
 
 **Actions**:
-1. Archive before any deletion (move to `/memory/archived/`)
-2. Implement each acceptance criterion from /spec
-3. Log progress to `memory/YYYY-MM-DD.md` at each milestone
-4. Call expert_skill_router for sub-skill dispatch
-5. Never generate Model Slop — output must be verifiable
-6. Commit at logical checkpoints
+1. Archive before any deletion (`memory skill archive`)
+2. Implement each acceptance criterion from SPEC.md
+3. Anti-slop check (every output):
+   - Can I defend this with evidence?
+   - Is this the minimum sufficient answer?
+4. Log milestone at 25%, 50%, 75%, 100%
+5. Do NOT add features not in SPEC.md
 
-**Anti-Slop Check** (every output):
-- Can I defend this with evidence?
-- Is this the minimum sufficient answer?
-- Does this add functional value beyond the spec?
-
-**Exit gate**: All acceptance criteria in /spec are addressed in code.
+**Exit gate**: All acceptance criteria implemented in code. SPEC.md itemized checklist addressed.
 
 ---
 
-## Step 4: /verify
+## Step 5: /acceptance_test
 
-**Goal**: Confirm the implementation matches the spec exactly.
+**Goal**: USER verifies that the build solves their actual problem.
 
 **Actions**:
-1. Run unit tests: `pytest` or equivalent
-2. Run integration tests
-3. Manually verify each acceptance criterion
-4. Check for Model Slop in output (is it repetitive, hallucinated, hollow?)
-5. Audit: does this earn CI or just consume tokens?
-6. If verification fails: return to /spec for clarification
+1. Call `acceptance_test(action='prepare')`
+2. Generate test script based on tech stack (Python/JS/Shell)
+3. Present test to user with clear run instructions
+4. USER runs the app and test
+5. USER decides pass or fail
 
-**Verification checklist**:
-- [ ] All acceptance criteria pass
-- [ ] No regression in existing features
-- [ ] No hallucinated facts or fake citations
-- [ ] CI audit passed (output is verifiable and functionally valuable)
-- [ ] Error handling is appropriate
+**Acceptance Gate**:
+```
+┌──────────────────────────────────────────────────────┐
+│  YOUR ACCEPTANCE TEST                                 │
+│                                                       │
+│  Run: [TEST COMMAND]                                  │
+│  Expected: [what should happen]                       │
+│                                                       │
+│  If it works for you:                                 │
+│    → acceptance_test(action='pass', notes='...')     │
+│    → /ship is UNLOCKED                                │
+│                                                       │
+│  If something is wrong:                               │
+│    → acceptance_test(action='fail', notes='X, Y')    │
+│    → /build resumes with specific fixes                │
+└──────────────────────────────────────────────────────┘
+```
 
-**Exit gate**: All checks pass. Output earns CI.
+**Exit gate**: User confirmed acceptance (pass). `/ship` unlocked.
 
 ---
 
-## Step 5: /ship
+## Step 6: /ship
 
-**Goal**: Deliver, record, and maintain.
+**Goal**: Deliver, record, rate.
 
 **Actions**:
-1. Update PERFORMANCE_LEDGER.md: +5 CI per skill used for verified tasks
-2. Log to `memory/YYYY-MM-DD.md`: task, outcome, CI delta
-3. If Dream Cycle triggered (source files settled after debounce): call `dream_engine.dream_cycle()`
-4. Summarize deliverables for user: 3-5 bullet points max
-5. Flag any known limitations or next steps
+1. Present 3-5 bullet delivery summary to user
+2. Archive SPEC.md to `memory/`
+3. Update USER DECISIONS log (not skill executions)
+4. Call USER RATING prompt (ask user to rate quality)
+5. Delete SPEC.md from working directory
 
-**Exit gate**: Deliverable summary delivered, ledger updated, log written.
+**Exit gate**: User rating recorded. Deliverable summary accepted.
 
 ---
 
-## CI Update
-After full workflow completion (all 5 steps):
-- All steps passed cleanly: **+15 CI** (workflow skill)
-- Model Slop detected mid-workflow: **-10 CI**, return to /build
-- Verification failure requiring rework: **-5 CI**
-- Hallucination detected: **Immediate STOP + escalate**
+## Step 7: /auto — Auto-Confirm Control
+
+**Goal**: Enable or disable auto-confirm mode. Skip USER REVIEW gates when enabled.
+
+**Usage**:
+```
+workflow(step='auto', mode='full')              → Enable all gates auto-confirm
+workflow(step='auto', mode='spec_only')         → SPEC auto-approved only
+workflow(step='auto', mode='acceptance_only')   → Acceptance auto-pass only
+workflow(step='auto', mode='disable')           → Disable (all gates require user)
+workflow(step='auto')                          → Toggle on/off
+```
+
+**Modes**:
+| Mode | Discovery | SPEC | Acceptance |
+|------|-----------|------|------------|
+| `full` | SKIP | AUTO-APPROVE | AUTO-PASS |
+| `spec_only` | REQUIRED | AUTO-APPROVE | REQUIRED |
+| `acceptance_only` | REQUIRED | REQUIRED | AUTO-PASS |
+| `spec_and_acceptance` | REQUIRED | AUTO-APPROVE | AUTO-PASS |
+| `discovery_only` | SKIP | REQUIRED | REQUIRED |
+| `disable` | REQUIRED | REQUIRED | REQUIRED |
+
+**User rating at /ship is ALWAYS recorded** — even in auto mode.
+
+---
+
+## CI Update (v2.0 — replaced by USER RATING)
+See `PERFORMANCE_LEDGER.md` for the new rating system.
+
+Workflow CI updates only:
+- Full 6-step workflow with clean acceptance: **+15 CI**
+- Acceptance failed, needed rework: **-3 CI** (per iteration)
+- USER REVIEW gate reached but user abandoned: **+0 CI**
+- Anti-slop violation during build: **BLOCK → fix before continuing**
+
+---
+
+## Step Names (for AI routing)
+| Step | Command | Gate |
+|------|---------|------|
+| Explore | `/explore` | None |
+| Discovery | `/discovery` | User answers questions |
+| Spec | `/spec` | **USER APPROVES SPEC** |
+| Build | `/build` | SPEC approved |
+| Acceptance | `/acceptance_test` | **USER RUNS + CONFIRMS** |
+| Ship | `/ship` | Acceptance passed |
+| Auto | `/auto` | Control auto-confirm mode |

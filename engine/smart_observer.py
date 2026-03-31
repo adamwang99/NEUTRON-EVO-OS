@@ -3,11 +3,13 @@ NEUTRON-EVO-OS: Smart Observer
 Uses watchdog to monitor source file changes.
 Debounce Logic: triggers Dream Cycle only after work settles.
 """
+from __future__ import annotations
+
 import time
 import logging
 import threading
 from pathlib import Path
-from typing import Callable, List, Tuple
+from typing import Callable, Optional
 
 try:
     from watchdog.observers import Observer
@@ -24,7 +26,7 @@ class DebounceHandler(FileSystemEventHandler):
         self.callback = callback
         self.debounce_seconds = debounce_seconds
         self.last_trigger = 0.0
-        self.pending_changes: List[Tuple[float, str]] = []
+        self.pending_changes: list[tuple[float, str]] = []
         self._lock = threading.Lock()
 
     def on_modified(self, event):
@@ -67,7 +69,7 @@ def start_observer(
     callback: Callable,
     debounce_seconds: int = 30,
     recursive: bool = True,
-) -> "Observer":
+) -> Optional["Observer"]:
     """
     Start watching root_path for changes.
     Debounces: only fires callback after debounce_seconds of silence.
@@ -89,9 +91,9 @@ class SilentObserver:
     Stop with: SilentObserver.stop().
     """
 
-    _instance = None
-    _thread = None
-    _observer = None
+    _lock = threading.Lock()
+    _thread: Optional[threading.Thread] = None
+    _observer: Optional["Observer"] = None
     _running = False
 
     @classmethod
@@ -101,35 +103,59 @@ class SilentObserver:
         callback: Callable,
         debounce_seconds: int = 30,
     ):
-        """Start observer in a background daemon thread."""
-        if cls._running:
-            logger.warning("Observer already running. Call .stop() first.")
-            return
+        """Start observer in a background daemon thread. Thread-safe."""
+        with cls._lock:
+            if cls._running:
+                logger.warning("Observer already running. Call .stop() first.")
+                return
 
-        def run():
-            try:
-                observer = start_observer(root_path, callback, debounce_seconds)
-                cls._observer = observer
-                observer.start()
-                cls._running = True
-                logger.info(f"[NEUTRON-EVO-OS] Observer started on {root_path}")
-                while cls._running:
-                    time.sleep(1)
-            except Exception as e:
-                logger.error(f"Observer error: {e}")
-                cls._running = False
+            def run():
+                try:
+                    observer = start_observer(root_path, callback, debounce_seconds)
+                    # Set _running=True BEFORE starting the observer (inside the lock)
+                    # so that stop() will correctly see it and stop the observer.
+                    # Without this, there's a race window between observer.start() and
+                    # _running=True where stop() returns without doing anything.
+                    with cls._lock:
+                        cls._observer = observer
+                        cls._running = True
+                    observer.start()
+                    logger.info(f"[NEUTRON-EVO-OS] Observer started on {root_path}")
+                    while True:
+                        with cls._lock:
+                            if not cls._running:
+                                break
+                        time.sleep(1)
+                except Exception as e:
+                    logger.error(f"Observer error: {e}")
+                finally:
+                    with cls._lock:
+                        cls._running = False
+                        if cls._observer:
+                            try:
+                                cls._observer.stop()
+                            except Exception:
+                                pass
+                            cls._observer = None
 
-        cls._thread = threading.Thread(target=run, daemon=True)
-        cls._thread.start()
+            cls._thread = threading.Thread(target=run, daemon=True)
+            cls._thread.start()
 
     @classmethod
     def stop(cls):
-        """Stop the observer gracefully."""
-        cls._running = False
-        if cls._observer:
-            cls._observer.stop()
-            cls._observer = None
-        if cls._thread:
-            cls._thread.join(timeout=5)
+        """Stop the observer gracefully. Thread-safe."""
+        with cls._lock:
+            if not cls._running:
+                return
+            cls._running = False
+            obs = cls._observer
+        # Stop outside lock to avoid deadlock
+        if obs:
+            try:
+                obs.stop()
+            except Exception:
+                pass
+        with cls._lock:
             cls._thread = None
+            cls._observer = None
         logger.info("[NEUTRON-EVO-OS] Observer stopped")

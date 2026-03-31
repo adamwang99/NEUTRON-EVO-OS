@@ -1,4 +1,4 @@
-.PHONY: live dream install install-global test clean lint help
+.PHONY: live dream install install-global test clean lint help checkpoint checkpoint-handoff checkpoint-read memoryos-wake memoryos-status memoryos-capture memoryos-context memoryos-init cli cli-status cli-audit cli-discover cli-auto cli-ship
 
 PYTHON := python3
 PIP := pip3
@@ -9,11 +9,26 @@ help:
 	@echo ""
 	@echo "  make install         Install dependencies (pip + npm)"
 	@echo "  make install-global Apply NEUTRON context to ALL projects (system-wide)"
+	@echo "  make cli-install    Install 'neutron' CLI command globally"
 	@echo "  make live           Start Smart Observer + Dashboard"
 	@echo "  make dream          Run Dream Cycle manually"
-	@echo "  make test           Run tests"
+	@echo "  make test           Run pytest (tests/ directory)"
 	@echo "  make clean          Remove cache files"
 	@echo "  make lint           Run linting"
+	@echo ""
+	@echo "  make cli            Show CLI commands"
+	@echo "  make cli-status     neutron status"
+	@echo "  make cli-audit      neutron audit"
+	@echo "  make cli-discover   neutron discover"
+	@echo "  make cli-auto       neutron auto (MODE=full)"
+	@echo ""
+	@echo "  MemoryOS CLI:"
+	@echo "    make memoryos-init    Initialize MemoryOS"
+	@echo "    make memoryos-wake    Recover context from last session"
+	@echo "    make memoryos-status  Show MemoryOS status"
+	@echo "    make memoryos-capture Auto-extract from conversation"
+	@echo "    make memoryos-context Load relevant memory"
+	@echo "  Note: remember/search/sleep require args — use node MemoryOS/src/index.js directly"
 	@echo ""
 	@echo "  System-wide setup:"
 	@echo "    bash install-global.sh   (or make install-global)"
@@ -43,7 +58,7 @@ import time; time.sleep(999999)" || true
 
 dream:
 	@echo "[NEUTRON-EVO-OS] Running manual Dream Cycle..."
-	$(PYTHON) -c "from engine.dream_engine import dream_cycle; import json; print(json.dumps(dream_cycle(), indent=2))"
+	$(PYTHON) -c "from engine.dream_engine import dream_cycle; print(dream_cycle(json_output=True))"
 
 test:
 	@echo "[NEUTRON-EVO-OS] Running tests..."
@@ -67,4 +82,64 @@ ci-install: install
 ci-audit:
 	$(PYTHON) -c "from engine.expert_skill_router import audit; import json; print(json.dumps(audit(), indent=2))"
 ci-route:
-	$(PYTHON) -c "from engine.expert_skill_router import route_task; import sys; t=sys.argv[1] if len(sys.argv)>1 else 'manage memory and context'; print(route_task(t))" -- "$(TASK)"
+	$(PYTHON) -c "from engine.expert_skill_router import route_task; import sys, json; t=sys.argv[1] if len(sys.argv)>1 else 'manage memory and context'; print(json.dumps(route_task(t), indent=2))" "$(TASK)"
+
+checkpoint:
+	@echo "[NEUTRON-EVO-OS] Writing checkpoint..."
+	$(PYTHON) engine/checkpoint_cli.py --task "$(TASK)" --notes "$(NOTES)" --confidence medium
+
+checkpoint-read:
+	@echo "[NEUTRON-EVO-OS] Reading latest checkpoint..."
+	$(PYTHON) engine/checkpoint_cli.py --read
+
+checkpoint-handoff:
+	@echo "[NEUTRON-EVO-OS] Handoff: checkpoint + dream cycle..."
+	$(PYTHON) engine/checkpoint_cli.py --handoff --task "$(TASK)" --notes "Handoff before context compaction"
+
+# MemoryOS CLI targets (explicit phony — pattern rules create side-effect files in GNU Make)
+memoryos-wake:
+	node MemoryOS/src/index.js wake
+memoryos-status:
+	node MemoryOS/src/index.js status
+memoryos-capture:
+	node MemoryOS/src/index.js capture
+memoryos-context:
+	node MemoryOS/src/index.js context
+memoryos-init:
+	node MemoryOS/src/index.js init
+
+# ─── NEUTRON CLI ────────────────────────────────────────────────────────────────
+# neutron command must be in PATH. Run: bash install-cli.sh
+cli:
+	@echo "NEUTRON CLI — Available commands:"
+	@echo "  neutron status           # System status + health"
+	@echo "  neutron audit           # Full CI audit"
+	@echo "  neutron discover \"idea\" # Discovery interview (12 questions)"
+	@echo "  neutron spec [task]     # Write SPEC.md (USER REVIEW gate)"
+	@echo "  neutron auto full       # Enable auto-confirm (skip all gates)"
+	@echo "  neutron auto spec_only   # Auto-approve SPEC only"
+	@echo "  neutron accept pass     # User confirms acceptance"
+	@echo "  neutron ship --rating 4 # Ship with rating"
+	@echo "  neutron log             # Today's memory log"
+	@echo "  neutron decisions       # User decisions log"
+	@echo "  neutron route \"task\"   # Route task to skill"
+	@echo ""
+	@echo "Install: bash install-cli.sh"
+
+cli-status:
+	$(PYTHON) -m engine.cli.main status
+
+cli-audit:
+	$(PYTHON) -m engine.cli.main audit
+
+cli-discover:
+	$(PYTHON) -m engine.cli.main discover "$(IDEA)"
+
+cli-auto:
+	$(PYTHON) -m engine.cli.main auto $(MODE)
+
+cli-ship:
+	$(PYTHON) -m engine.cli.main ship "$(TASK)" --rating $(RATING)
+
+cli-install:
+	@bash install-cli.sh

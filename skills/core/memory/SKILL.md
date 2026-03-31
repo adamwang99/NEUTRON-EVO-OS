@@ -12,6 +12,14 @@ last_dream: null
 ### Purpose
 Manage long-term memory, daily logs, and Memory 2.0 (Dream Cycle: pruning + distillation) for NEUTRON EVO OS.
 
+### CLI Integration
+Use the `memoryos` CLI for session lifecycle management:
+- `memoryos wake` — recover session context at start
+- `memoryos remember "note" [--category <type>]` — capture structured memories
+- `memoryos search "query"` — search across all memories
+- `memoryos status` — show MemoryOS statistics
+- `memoryos sleep "summary" --next "next task"` — save session checkpoint
+
 ### Memory Architecture
 ```
 memory/
