@@ -46,27 +46,17 @@ It is **not** a wrapper script. It is a complete cognitive architecture:
 git clone https://github.com/adamwang99/NEUTRON-EVO-OS.git
 cd NEUTRON-EVO-OS
 
-# 2. Install CLI (creates `neutron` command in PATH)
-bash install-cli.sh
-export PATH="$HOME/.local/bin:$PATH"   # add to ~/.bashrc to persist
+# 2. Install (3 modes — pick one)
+bash install.sh cli      # CLI only (neutron command)
+bash install.sh mcp     # CLI + MCP server for Claude Code  ← recommended
+bash install.sh full    # Everything: MCP + hooks + all projects
 
 # 3. Verify
 neutron --help
 neutron status
-neutron audit
 ```
 
 **That's it.** No `pip install`, no config files, no credentials needed.
-
----
-
-## System-Wide Install (Recommended)
-
-Apply NEUTRON EVO OS to **every project** — automatically.
-
-```bash
-bash install-global.sh   # or: make install-global
-```
 
 What it does:
 - Installs `neutron` CLI to `~/.local/bin`

@@ -1,7 +1,11 @@
 #!/bin/bash
 # ─────────────────────────────────────────────────────────────
-# NEUTRON CLI — Install Script
+# NEUTRON CLI — Install Script  (DEPRECATED → use install.sh)
 # Installs `neutron` command in PATH.
+# ─────────────────────────────────────────────────────────────
+# NOTE: This script is kept for backward compatibility.
+# For CLI + MCP:  bash install.sh mcp
+# For everything: bash install.sh full
 # ─────────────────────────────────────────────────────────────
 set -e
 

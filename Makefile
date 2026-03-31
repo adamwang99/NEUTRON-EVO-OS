@@ -7,40 +7,50 @@ SHELL := /usr/bin/env bash
 help:
 	@echo "NEUTRON-EVO-OS v4.1.0 Makefile"
 	@echo ""
-	@echo "  make install         Install dependencies (pip + npm)"
-	@echo "  make install-global Apply NEUTRON context to ALL projects (system-wide)"
-	@echo "  make cli-install    Install 'neutron' CLI command globally"
-	@echo "  make live           Start Smart Observer + Dashboard"
-	@echo "  make dream          Run Dream Cycle manually"
-	@echo "  make test           Run pytest (tests/ directory)"
-	@echo "  make clean          Remove cache files"
-	@echo "  make lint           Run linting"
+	@echo "  Install (use install.sh directly for more options):"
+	@echo "    make install-cli    bash install.sh cli"
+	@echo "    make install-mcp   bash install.sh mcp  ← recommended"
+	@echo "    make install-global bash install.sh full"
 	@echo ""
-	@echo "  make cli            Show CLI commands"
-	@echo "  make cli-status     neutron status"
-	@echo "  make cli-audit      neutron audit"
-	@echo "  make cli-discover   neutron discover"
-	@echo "  make cli-auto       neutron auto (MODE=full)"
+	@echo "  make install         Install dependencies (pip)"
+	@echo "  make live            Start Smart Observer + Dashboard"
+	@echo "  make dream           Run Dream Cycle manually"
+	@echo "  make test            Run pytest (tests/ directory)"
+	@echo "  make clean           Remove cache files"
+	@echo "  make lint            Run linting"
+	@echo ""
+	@echo "  NEUTRON CLI (18 commands):"
+	@echo "    make cli            Show CLI commands"
+	@echo "    make cli-status     neutron status"
+	@echo "    make cli-audit      neutron audit"
+	@echo "    make cli-discover   neutron discover"
+	@echo "    make cli-auto       neutron auto (MODE=full)"
 	@echo ""
 	@echo "  MemoryOS CLI:"
 	@echo "    make memoryos-init    Initialize MemoryOS"
 	@echo "    make memoryos-wake    Recover context from last session"
 	@echo "    make memoryos-status  Show MemoryOS status"
-	@echo "    make memoryos-capture Auto-extract from conversation"
 	@echo "    make memoryos-context Load relevant memory"
-	@echo "  Note: remember/search/sleep require args — use node MemoryOS/src/index.js directly"
 	@echo ""
-	@echo "  System-wide setup:"
-	@echo "    bash install-global.sh   (or make install-global)"
+	@echo "  Quick start:"
+	@echo "    bash install.sh mcp  # CLI + MCP server"
 
 install:
 	@echo "[NEUTRON-EVO-OS] Installing dependencies..."
 	$(PIP) install -r requirements.txt
 	@echo "[OK] Dependencies installed"
 
+install-cli:
+	@echo "[NEUTRON-EVO-OS] Installing CLI..."
+	@bash install.sh cli
+
+install-mcp:
+	@echo "[NEUTRON-EVO-OS] Installing CLI + MCP server..."
+	@bash install.sh mcp
+
 install-global:
-	@echo "[NEUTRON-EVO-OS] Running global installer..."
-	@bash install-global.sh
+	@echo "[NEUTRON-EVO-OS] Running full installer..."
+	@bash install.sh full
 
 live: install
 	@echo "[NEUTRON-EVO-OS] Starting Smart Observer + Evolution Dashboard..."
