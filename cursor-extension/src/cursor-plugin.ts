@@ -101,7 +101,7 @@ export function activate(): void {
 export async function neutronStatus(): Promise<string> {
     // Calls MCP endpoint: POST /mcp with tools/call
     // Returns formatted status output
-    return `[NEUTRON EVO OS v4.4.0]
+    return `[NEUTRON EVO OS v4.3.1]
 System: Running
 MCP: Connected
 Skills: 7 core + learned

@@ -4,7 +4,7 @@ All notable changes are documented here. The format follows [Keep a Changelog](h
 
 ---
 
-## [4.4.0] — 2026-04-01 — Audit Fixes + Upgrade Protection
+## [4.3.1] — 2026-04-01 — Audit Fixes + Upgrade Protection
 
 ### New Features
 

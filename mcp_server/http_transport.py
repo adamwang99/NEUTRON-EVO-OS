@@ -51,7 +51,7 @@ class JSONRPCResponse(BaseModel):
 def create_app() -> FastAPI:
     app = FastAPI(
         title="NEUTRON EVO OS — MCP HTTP Server",
-        version="4.4.0",
+        version="4.3.1",
         description="Model Context Protocol server over HTTP with API key auth",
     )
 
@@ -71,7 +71,7 @@ def create_app() -> FastAPI:
     @app.get("/health")
     async def health():
         """Liveness probe."""
-        return {"status": "ok", "version": "4.4.0", "server": "NEUTRON-EVO-OS"}
+        return {"status": "ok", "version": "4.3.1", "server": "NEUTRON-EVO-OS"}
 
     # ── Ready check ───────────────────────────────────────────────────────────
     @app.get("/ready")
