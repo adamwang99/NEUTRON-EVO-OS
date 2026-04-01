@@ -320,7 +320,10 @@ EOF
 
     # 4. Auto-apply to existing projects (use canonical symlink path)
     echo -e "\n${BOLD}─── Auto-apply to existing projects ───${RESET}"
-    PROJECTS_DIR="$HOME/mnt/data/projects"
+    # Scan common project directories
+    for PROJECTS_DIR in "$HOME/mnt/data/projects" "$HOME/Projects" "$HOME/projects" "$HOME/code" "$HOME/repos"; do
+        [ -d "$PROJECTS_DIR" ] && break
+    done
     if [ -d "$PROJECTS_DIR" ]; then
         APPLY=0
         for project_dir in "$PROJECTS_DIR"/*/; do
