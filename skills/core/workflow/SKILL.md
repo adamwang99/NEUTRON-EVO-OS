@@ -122,7 +122,20 @@ After tech stack is confirmed (React / Vue / Svelte / Next.js / etc.):
   4. Proceed to build
 ```
 
-**HARD GATE — USER REVIEW**:
+**AUTO-CONFIRM SPEC BYPASS (check BEFORE showing USER REVIEW gate):**
+```
+BEFORE showing the SPEC REVIEW gate below:
+1. Read memory/.auto_confirm.json
+2. IF {"enabled": true} AND {"spec": true}:
+   ✅ SPEC IS AUTO-APPROVED — Do NOT show the USER REVIEW gate below.
+   ✅ Log in memory: "SPEC auto-approved (auto-confirm active)"
+   ✅ Proceed directly to /build
+   ✅ The only thing you still ask: /ship rating at the end
+3. IF auto-confirm is NOT active:
+   → Show the USER REVIEW gate below (normal flow)
+```
+
+**HARD GATE — USER REVIEW** (SKIP THIS BLOCK if auto-confirm spec=true):
 ```
 ┌─────────────────────────────────────────────────────┐
 │  SPEC REVIEW                                          │
@@ -141,7 +154,7 @@ After tech stack is confirmed (React / Vue / Svelte / Next.js / etc.):
 └─────────────────────────────────────────────────────┘
 ```
 
-**Exit gate**: User answered "APPROVE" or equivalent. Gate recorded in memory.
+**Exit gate**: User answered "APPROVE" or equivalent (OR auto-confirm spec=true). Gate recorded in memory.
 
 ---
 
@@ -173,7 +186,19 @@ After tech stack is confirmed (React / Vue / Svelte / Next.js / etc.):
 4. USER runs the app and test
 5. USER decides pass or fail
 
-**Acceptance Gate**:
+**AUTO-CONFIRM ACCEPTANCE BYPASS (check BEFORE showing USER TEST gate):**
+```
+BEFORE showing the ACCEPTANCE TEST gate below:
+1. Read memory/.auto_confirm.json
+2. IF {"enabled": true} AND {"acceptance": true}:
+   ✅ ACCEPTANCE IS AUTO-PASSED — Do NOT show the USER TEST gate below.
+   ✅ Log in memory: "Acceptance auto-passed (auto-confirm active)"
+   ✅ Proceed directly to /ship
+3. IF auto-confirm is NOT active:
+   → Show the USER TEST gate below (normal flow)
+```
+
+**Acceptance Gate** (SKIP THIS BLOCK if auto-confirm acceptance=true):
 ```
 ┌──────────────────────────────────────────────────────┐
 │  YOUR ACCEPTANCE TEST                                 │
@@ -191,7 +216,7 @@ After tech stack is confirmed (React / Vue / Svelte / Next.js / etc.):
 └──────────────────────────────────────────────────────┘
 ```
 
-**Exit gate**: User confirmed acceptance (pass). `/ship` unlocked.
+**Exit gate**: User confirmed acceptance (pass) (OR auto-confirm acceptance=true). `/ship` unlocked.
 
 ---
 

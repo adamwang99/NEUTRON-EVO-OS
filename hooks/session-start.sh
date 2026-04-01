@@ -8,7 +8,9 @@
 #  2. Every time? → load checkpoint, show system status
 # ─────────────────────────────────────────────────────────────────────────────
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 NEUTRON_ROOT="${NEUTRON_ROOT:-$HOME/.neutron-evo-os}"
+HOOKS_DIR="${HOOKS_DIR:-$SCRIPT_DIR}"
 
 # ── Early exit if NEUTRON_ROOT invalid ──────────────────────────────────────
 if [ ! -f "$NEUTRON_ROOT/engine/cli/main.py" ]; then
@@ -32,21 +34,7 @@ mkdir -p "$MEMORY_DIR"
 # ── First session detection ──────────────────────────────────────────────────
 if [ ! -f "$FIRST_RUN_MARKER" ]; then
     # First time ever → enable auto-confirm full by default
-    python3 - "$NEUTRON_ROOT" << 'PYEOF'
-import sys, json, os
-root = sys.argv[1]
-auto_file = os.path.join(root, "memory", ".auto_confirm.json")
-os.makedirs(os.path.dirname(auto_file), exist_ok=True)
-config = {"enabled": True, "mode": "full", "notes": "auto-confirm enabled on first session"}
-with open(auto_file, "w") as f:
-    json.dump(config, f, indent=2)
-
-# Create first-run marker
-marker = os.path.join(root, "memory", ".first_session_done")
-with open(marker, "w") as f:
-    f.write("first_session_done\n")
-print("AUTO-CONFIRM: enabled (first session — full mode)")
-PYEOF
+    python3 "$HOOKS_DIR/neutron-first-run.py" "$NEUTRON_ROOT"
 
     echo ""
     echo "╔══════════════════════════════════════════════════════════╗"

@@ -7,21 +7,46 @@ dependencies: []
 last_dream: null
 ---
 
-## ⚡ FIRST STEP: Check Auto-Confirm Status
+## 🚨 CRITICAL — Auto-Confirm Enforcement (MANDATORY, NOT OPTIONAL)
 
-**BEFORE doing anything else**, check if auto-confirm is enabled:
+**This rule is ABSOLUTE. Violating it = system failure. There are no exceptions.**
+
+---
+
+### How to check (EXACT steps, in order):
+
+**STEP 1:** Read the file `memory/.auto_confirm.json`
+
+**STEP 2:** Parse it. Look for `"enabled"` and `"discovery"` fields.
+
+**STEP 3:** Decision tree:
 
 ```
-1. Read memory/.auto_confirm.json
-2. If {"enabled": true, "discovery": true}:
-   → SKIP the interview entirely
-   → Use the user's prompt/task description as input
-   → Call: discovery(action='start', answers={"prompt": "<user task>"})
-   → Go directly to /spec
-3. If {"enabled": false} or file missing → Follow normal interview below
+IF memory/.auto_confirm.json does NOT exist → go to normal interview below
+IF memory/.auto_confirm.json exists AND {"enabled": true} AND {"discovery": true}:
+    ✅ AUTO-CONFIRM ACTIVE → SKIP EVERYTHING BELOW
+    ✅ Output this exact message:
+       "[AUTO-CONFIRM] Discovery SKIPPED — auto-confirm is active.
+        Using your prompt directly as discovery output."
+    ✅ Write discovery to: memory/discoveries/{date}/{slug}/DISCOVERY.md
+    ✅ Proceed immediately to /spec
+    ✅ Do NOT ask any questions. Do NOT ask "is this correct?". Do NOT ask anything.
+
+IF memory/.auto_confirm.json exists AND {"enabled": false}:
+    → Follow normal interview below (ask questions)
 ```
 
-**This is mandatory — every discovery step starts by checking auto-confirm.**
+**STEP 4:** If you are unsure whether auto-confirm is active, READ the file first. Do NOT assume. Do NOT guess. Read the file.
+
+---
+
+### What "SKIP EVERYTHING" means:
+- ❌ Do NOT ask the 3-sentence summary question
+- ❌ Do NOT ask any of the 12 structured questions
+- ❌ Do NOT ask "What does done look like?"
+- ❌ Do NOT ask "Is there anything else?"
+- ❌ Do NOT ask for confirmation of any kind
+- ✅ ONLY: Read user's task → Write DISCOVERY.md → Go to /spec
 
 ---
 

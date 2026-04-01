@@ -26,6 +26,12 @@ Thumbs.db
 *.tmp
 *.temp
 
+# Python compiled
+__pycache__/
+*.py[cod]
+*.pyc
+.pytest_cache/
+
 # MemoryOS local config (user-specific)
 MemoryOS/.memoryos/config.json
 
@@ -49,8 +55,9 @@ memory/discoveries/
 
 # Local backups (upgrade protection)
 .backup/
-.backup/
 
 # NEUTRON local MCP config
 .mcp_config.json
-memory/.mcp_config.json
+
+# npm garbage
+=npm-debug.log*

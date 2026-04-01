@@ -4,11 +4,27 @@ All notable changes are documented here. The format follows [Keep a Changelog](h
 
 ---
 
-## [4.3.1] — 2026-04-01 — Audit Fixes + Upgrade Protection
+## [4.3.1] — 2026-04-01 — Audit Fixes + UI Library + CLI Upgrade
 
 ### New Features
 
-- **Upgrade Protection Protocol** (`RULES.md`) — MANDATORY steps before any upgrade
+- **UI Library Reference Skill** (`skills/core/ui_library/`) — Auto-suggest best UI library (shadcn/ui, AntD, Mantine, Magic UI, DaisyUI) dựa trên project type, tech stack, và requirements. Tích hợp vào `/spec` step.
+- **`neutron version`** (`engine/cli/main.py`) — Hiển thị version, health, CI, ratings, auto-confirm status.
+- **`neutron protect [--dry-run]`** (`engine/cli/main.py`) — Backup `.env`, `memory/*.json`, `USER.md` → `.backup/`.
+- **USER.md** (`memory/USER.md`) — User preferences file, được tạo từ template với UI và versioning preferences.
+- **Upgrade Protection Protocol** (`RULES.md`) — MANDATORY steps trước mọi upgrade: git status + backup.
+
+### Bug Fixes
+
+- **Auto-confirm enforcement** (`discovery/SKILL.md`, `workflow/SKILL.md`, `acceptance_test/SKILL.md`, `SOUL.md`) — Root cause: Claude Code đọc SKILL.md như TEXT, không execute Python. Viết lại SKILL.md với hard-line directive language (STEP 1-4 decision tree, "SKIP EVERYTHING" checklist).
+- **SPEC gate auto-bypass** (`workflow/SKILL.md`) — AUTO-CONFIRM BYPASS block trước USER REVIEW gate.
+- **Acceptance gate auto-bypass** (`workflow/SKILL.md`, `acceptance_test/SKILL.md`) — AUTO-CONFIRM BYPASS block trước USER TEST gate.
+- **PII redaction over-match** (`checkpoint_cli.py`) — Phone pattern match cả API key. Fix: đưa specific key pattern (sk-, ghp_, xox-) lên TRƯỚC phone pattern.
+- **Auto-confirm Python TypeError** (`discovery/logic/__init__.py`) — `_save_session()` gọi sai signature → silent TypeError swallowed → auto-confirm không hoạt động. Fix: đúng 4 positional args.
+- **Rating not saved** (`workflow/logic/__init__.py`) — `_step_ship()` không call `rating.record_shipment()`.
+- **CORS security** (`mcp_server/http_transport.py`) — `allow_credentials=True` + `allow_origins=["*"]` bị browser reject.
+- **Multi-tenant race** (`http_transport.py`) — `os.environ` bị mutate per-request. Giờ dùng `contextvars.ContextVar`.
+- **Rate limit bypass** (`http_transport.py`) — `/keys` endpoints không check rate-limit. — MANDATORY steps before any upgrade
   (`git pull`, `pip install`, `install.sh`, etc.):
   - Check `git status` first
   - Backup protected files (`.env`, `memory/*.json`, `USER.md`) to `.backup/`

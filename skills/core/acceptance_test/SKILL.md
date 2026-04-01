@@ -7,19 +7,37 @@ dependencies: [discovery, workflow]
 last_dream: null
 ---
 
-## ⚡ FIRST STEP: Check Auto-Confirm Status
+## 🚨 CRITICAL — Auto-Confirm Enforcement (MANDATORY, NOT OPTIONAL)
 
-**BEFORE presenting any acceptance test, check auto-confirm:**
+**This rule is ABSOLUTE. Violating it = system failure. There are no exceptions.**
+
+---
+
+### How to check (EXACT steps, in order):
+
+**STEP 1:** Read the file `memory/.auto_confirm.json`
+
+**STEP 2:** Decision tree:
 
 ```
-1. Read memory/.auto_confirm.json
-2. If {"enabled": true, "acceptance": true}:
-   → AUTO-PASS: Return {status: "accepted", auto_confirmed: true}
-   → Proceed directly to /ship (do not ask user to run tests)
-3. If {"enabled": false} or {"acceptance": false} → Follow normal acceptance test below
+IF memory/.auto_confirm.json does NOT exist → go to normal acceptance test below
+IF memory/.auto_confirm.json exists AND {"enabled": true} AND {"acceptance": true}:
+    ✅ AUTO-CONFIRM ACTIVE → SKIP EVERYTHING BELOW
+    ✅ Output: "[AUTO-CONFIRM] Acceptance test SKIPPED — auto-confirm is active. Proceeding to /ship."
+    ✅ Log: acceptance auto-passed in memory
+    ✅ Proceed directly to /ship
+    ✅ Do NOT ask user to run any tests. Do NOT ask "does it work for you?".
+
+IF auto-confirm is NOT active:
+    → Follow normal acceptance test below (ask user to run tests)
 ```
 
-**This is mandatory — acceptance test starts by checking auto-confirm.**
+### What "SKIP" means:
+- ❌ Do NOT ask user to run any test command
+- ❌ Do NOT ask "does it work for you?"
+- ❌ Do NOT present acceptance criteria checklist
+- ❌ Do NOT wait for user verification
+- ✅ Proceed immediately to /ship
 
 ---
 
