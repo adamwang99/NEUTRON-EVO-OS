@@ -336,6 +336,34 @@ def run_discovery(task: str, context: dict = None) -> dict:
       - Write discovery output to memory/discoveries/
       - Return readiness status
     """
+    # ── FIRST STEP: Check auto-confirm ─────────────────────────────────────────
+    # This must be the FIRST check — AI reads this file, not auto_confirm.py
+    try:
+        from engine.auto_confirm import should_skip, record_auto_action
+        if should_skip("discovery"):
+            # Skip interview — use task/prompt as discovery input directly
+            try:
+                slug = _slugify(task)
+                _save_session(slug, task, {"auto_confirmed": True}, {"prompt": task})
+            except Exception:
+                pass  # Session save failure is non-fatal
+            record_auto_action("discovery", {})
+            return {
+                "status": "discovery_auto_confirmed",
+                "output": (
+                    "[AUTO-CONFIRM] Discovery SKIPPED.\n"
+                    "Using your prompt directly as discovery input.\n\n"
+                    f"Task: {task[:200]}\n\n"
+                    "Next: /spec — writing SPEC.md now."
+                ),
+                "discovery_complete": True,
+                "answers": {"prompt": task},
+                "ci_delta": 0,
+                "auto_confirmed": True,
+            }
+    except Exception as e:
+        pass  # Proceed with normal flow
+
     context = context or {}
     action = context.get("action", "start")
 

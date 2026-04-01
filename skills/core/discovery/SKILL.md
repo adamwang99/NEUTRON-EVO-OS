@@ -7,6 +7,24 @@ dependencies: []
 last_dream: null
 ---
 
+## ⚡ FIRST STEP: Check Auto-Confirm Status
+
+**BEFORE doing anything else**, check if auto-confirm is enabled:
+
+```
+1. Read memory/.auto_confirm.json
+2. If {"enabled": true, "discovery": true}:
+   → SKIP the interview entirely
+   → Use the user's prompt/task description as input
+   → Call: discovery(action='start', answers={"prompt": "<user task>"})
+   → Go directly to /spec
+3. If {"enabled": false} or file missing → Follow normal interview below
+```
+
+**This is mandatory — every discovery step starts by checking auto-confirm.**
+
+---
+
 ## Discovery Interview Skill — Understand Before Building
 
 ### Purpose

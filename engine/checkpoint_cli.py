@@ -18,12 +18,18 @@ NEUTRON_ROOT = Path(os.environ.get("NEUTRON_ROOT", Path(__file__).parent.parent)
 MEMORY_DIR = NEUTRON_ROOT / "memory"
 CHECKPOINT_SCRIPT = NEUTRON_ROOT / "skills" / "core" / "checkpoint" / "SKILL.md"
 
-# PII scrubbing patterns
+# PII scrubbing patterns — ORDER MATTERS (specific first, general last)
 _PII_PATTERNS = [
-    (re.compile(r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}"), "[EMAIL]"),
-    (re.compile(r"\+?[0-9][0-9\s\-()]{7,}[0-9]"), "[PHONE]"),
+    # [KEY] first: specific prefix patterns (TOKEN=sk-xxxx, api_key=xxxx, etc.)
+    (re.compile(r"(?i)(?:api[_-]?key|secret[_-]?key|token|password)\s*[:=]\s*['\"]?[\w\-]{16,}['\"]?"), "[KEY]"),
+    # [KEY] standalone: bare API keys with sk- or similar prefixes
+    (re.compile(r"(?i)\b(sk-[a-zA-Z0-9]{20,}|ghp_[a-zA-Z0-9]{20,}|xox[baprs]-[a-zA-Z0-9]{10,})\b"), "[KEY]"),
+    # [CARD]: 16-digit card patterns
     (re.compile(r"\b\d{4}[\s-]?\d{4}[\s-]?\d{4}[\s-]?\d{4}\b"), "[CARD]"),
-    (re.compile(r"(?i)(?:api[_-]?key|secret[_-]?key|token|password)\s*[:=]\s*['\"]?[\w\-]{16,}['\"]?",), "[KEY]"),
+    # [EMAIL]
+    (re.compile(r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}"), "[EMAIL]"),
+    # [PHONE]: clear phone patterns only (with word boundary guards)
+    (re.compile(r"(?<![a-zA-Z])\+?[0-9][0-9\s\-().]{7,}[0-9](?![a-zA-Z0-9])"), "[PHONE]"),
 ]
 
 
