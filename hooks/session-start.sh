@@ -26,8 +26,10 @@ export NEUTRON_ROOT
 
 # ── Paths ────────────────────────────────────────────────────────────────────
 MEMORY_DIR="$NEUTRON_ROOT/memory"
+ARCHIVED_DIR="$MEMORY_DIR/archived"
 FIRST_RUN_MARKER="$MEMORY_DIR/.first_session_done"
 AUTO_CONFIRM_CONFIG="$MEMORY_DIR/.auto_confirm.json"
+GC_LOCK="$MEMORY_DIR/.gc_running"
 
 mkdir -p "$MEMORY_DIR"
 
@@ -62,6 +64,36 @@ else
         esac
         echo "  $ICON NEUTRON AUTO: $LABEL"
     fi
+fi
+
+# ── Garbage Collection (every session — silent) ─────────────────────────────
+# Runs lightweight cleanup silently. Full gc: neutron gc --pycache --tests
+# Uses lock file to prevent concurrent gc if multiple sessions start
+if [ ! -f "$GC_LOCK" ]; then
+    touch "$GC_LOCK"
+    (
+        # 1. archived/ daily log archives — delete files older than 7 days
+        if [ -d "$ARCHIVED_DIR" ]; then
+            find "$ARCHIVED_DIR" -maxdepth 1 \
+                \( -name "????-??-??_??????????.md" -o -name "????-??-??_*.md" \) \
+                -type f -mtime +7 -delete 2>/dev/null
+        fi
+
+        # 2. __pycache__ directories recursively
+        find "$NEUTRON_ROOT" -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null
+
+        # 3. *.pyc files
+        find "$NEUTRON_ROOT" -name "*.pyc" -type f -delete 2>/dev/null
+
+        # 4. .pytest_cache
+        find "$NEUTRON_ROOT" -name ".pytest_cache" -type d -exec rm -rf {} + 2>/dev/null
+
+        # 5. data_*.json dumps in archived/ (test/agent garbage — always clean)
+        if [ -d "$ARCHIVED_DIR" ]; then
+            find "$ARCHIVED_DIR" -name "data_*.json" -type f -delete 2>/dev/null
+        fi
+    ) 2>/dev/null
+    rm -f "$GC_LOCK"
 fi
 
 # ── Load checkpoint if exists ────────────────────────────────────────────────
