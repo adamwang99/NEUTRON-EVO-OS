@@ -1,0 +1,18 @@
+{
+  "mcpServers": {
+    "NEUTRON-EVO-OS": {
+      "command": "python3",
+      "args": [
+        "-m",
+        "mcp_server",
+        "--transport",
+        "http",
+        "--port",
+        "3100"
+      ],
+      "env": {
+        "NEUTRON_ROOT": "/path/to/neutron-evo-os"
+      }
+    }
+  }
+}

@@ -4,6 +4,35 @@ All notable changes are documented here. The format follows [Keep a Changelog](h
 
 ---
 
+## [4.3.0] — 2026-04-01 — Phase 7 Complete
+
+### New Features
+
+- **HTTP MCP Transport** (`mcp_server/http_transport.py`) — FastAPI server on port 3100 with full JSON-RPC 2.0 support. Enables Cursor, Cline, and any HTTP-capable MCP client.
+- **MCP Authentication** (`mcp_server/auth.py`) — `X-NEUTRON-API-Key` header validation with token-bucket rate limiting (60 req/min per key).
+- **Multi-NEUTRON_ROOT** (`mcp_server/config.py`) — API keys map to specific `NEUTRON_ROOT` paths. Serve multiple projects with one MCP server.
+- **Cursor IDE Integration** (`cursor-extension/`) — MCP config + TypeScript plugin + `install-cursor.sh` for one-command Cursor setup.
+- **Cline Integration** (`cline-plugin/`) — MCP config + setup script for VS Code Cline extension.
+- **Learned Skills Pipeline** (`engine/learned_skill_builder.py`, `skills/learned/`) — Auto-distill patterns from session memory → reusable skills. Lifecycle: learned (CI=35) → proven (CI≥50) → core (CI≥70).
+- **`make install-cursor`** — Cursor IDE install target.
+- **`make install-cline`** — Cline install target.
+- **`make mcp-server`** — Start HTTP MCP server on port 3100.
+- **`--transport http`** — New CLI flag for `python3 -m mcp_server`.
+
+### Bug Fixes
+
+- **Config auto-create** — `memory/.mcp_config.json` now auto-creates on first HTTP server start (was silently skipped).
+- **`_load()` race condition** — Fixed `_load()` returning empty config without persisting default.
+
+### Documentation
+
+- **ARCHITECTURE.md** — Added MCP HTTP transport, Cursor/Cline, Learned Skills sections. Phase roadmap updated.
+- **README.md** — Added IDE Integrations section (Cursor, Cline, MCP server).
+- **skills/learned/** — First learned skill: `auto-confirm-skill-level` (captured from Phase 6 fix).
+- **skills/core/SKILL.md** — Added auto-confirm FIRST STEP enforcement at documentation level.
+
+---
+
 ## [4.2.0] — 2026-04-01 — Phase 6 Complete
 
 ### New Features

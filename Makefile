@@ -1,4 +1,4 @@
-.PHONY: live dream install install-global test clean lint help checkpoint checkpoint-handoff checkpoint-read memoryos-wake memoryos-status memoryos-capture memoryos-context memoryos-init cli cli-status cli-audit cli-discover cli-auto cli-ship
+.PHONY: live dream install install-global install-cursor install-cline test clean lint help checkpoint checkpoint-handoff checkpoint-read memoryos-wake memoryos-status memoryos-capture memoryos-context memoryos-init cli cli-status cli-audit cli-discover cli-auto cli-ship mcp-server mcp-http
 
 PYTHON := python3
 PIP := pip3
@@ -51,6 +51,18 @@ install-mcp:
 install-global:
 	@echo "[NEUTRON-EVO-OS] Running full installer..."
 	@bash install.sh full
+
+install-cursor:
+	@echo "[NEUTRON-EVO-OS] Installing Cursor IDE integration..."
+	@bash install-cursor.sh
+
+install-cline:
+	@echo "[NEUTRON-EVO-OS] Installing Cline integration..."
+	@bash install-cline.sh
+
+mcp-server:
+	@echo "[NEUTRON-EVO-OS] Starting MCP HTTP server on port 3100..."
+	@python3 -m mcp_server --transport http --port 3100
 
 live: install
 	@echo "[NEUTRON-EVO-OS] Starting Smart Observer + Evolution Dashboard..."

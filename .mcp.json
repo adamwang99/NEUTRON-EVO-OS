@@ -2,7 +2,7 @@
   "mcpServers": {
     "NEUTRON-EVO-OS": {
       "command": "python3",
-      "args": ["-m", "mcp_server"],
+      "args": ["-m", "mcp_server", "--transport", "http", "--port", "3100"],
       "env": {}
     }
   }

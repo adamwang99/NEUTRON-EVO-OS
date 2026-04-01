@@ -1,2 +1,6 @@
 watchdog>=3.0.0
 rich>=13.0.0
+filelock>=3.13.0
+pytest>=8.0.0
+fastapi>=0.115.0
+uvicorn[standard]>=0.34.0

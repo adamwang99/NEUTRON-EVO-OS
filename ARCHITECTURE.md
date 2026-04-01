@@ -273,6 +273,75 @@ memory/
 
 ---
 
+## MCP Server — AI Code Integration
+
+### Transport Modes
+
+```
+stdio mode (Claude Code):    python3 -m mcp_server
+HTTP mode (Cursor/Cline):    python3 -m mcp_server --transport http --port 3100
+```
+
+| Transport | Port | Auth | Use Case |
+|-----------|------|------|---------|
+| stdio | — | Via Claude Code MCP | Claude Code CLI |
+| HTTP | 3100 | `X-NEUTRON-API-Key` | Cursor, Cline, custom clients |
+
+### HTTP Endpoints
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| GET | `/health` | None | Liveness probe |
+| GET | `/ready` | None | Readiness probe (checks NEUTRON_ROOT) |
+| GET | `/keys` | Required | List API keys |
+| POST | `/keys` | Required | Create new API key |
+| POST | `/mcp` | Required | JSON-RPC 2.0 single request |
+| POST | `/mcp/batch` | Required | JSON-RPC 2.0 batch |
+
+### Multi-NEUTRON_ROOT Support
+
+Each API key maps to a specific `NEUTRON_ROOT`. Configure via `memory/.mcp_config.json`.
+
+### Available MCP Tools (10)
+
+`neutron_checkpoint`, `neutron_context`, `neutron_discovery`, `neutron_spec`,
+`neutron_memory`, `neutron_workflow`, `neutron_acceptance`, `neutron_engine`,
+`neutron_audit`, `neutron_auto_confirm`
+
+### MCP Resources
+
+`memory://today` — Today's session log | `ledger://ci` — Skill CI scores
+
+---
+
+## Cursor / Cline Integration
+
+```bash
+make install-cursor   # Cursor IDE
+make install-cline    # Cline (VS Code extension)
+```
+
+Both use HTTP mode MCP (port 3100). See `cursor-extension/` and `cline-plugin/`.
+
+---
+
+## Learned Skills
+
+Distill reusable patterns from sessions into `skills/learned/`.
+
+```
+Lifecycle: learned (CI=35) → proven (CI≥50) → core (CI≥70)
+Engine: engine/learned_skill_builder.py
+```
+
+| Event | CI Delta |
+|-------|----------|
+| Learned invoked + reused | +3 |
+| Promoted to core | +10 |
+| Not used in 30 days | -2 |
+
+---
+
 ## Phase Roadmap
 
 | Phase | Description | Status |
@@ -280,8 +349,8 @@ memory/
 | 1–4 | Emergency patches, stabilization, integration, docs | ✅ **COMPLETE** |
 | 5 | Skill logic/validation modules, Phase 5 plugin system | ✅ **COMPLETE** |
 | 6 | MCP server (Model Context Protocol) | ✅ **COMPLETE** |
-| 7 | Cursor/Cline integration layer | 🔲 Planned |
-| 8 | Learned skills pipeline (skills/learned/) | 🔲 Planned |
+| 7 | HTTP transport + Cursor/Cline + Learned skills | ✅ **COMPLETE** |
+| 8 | Future work (Phase 7 items done in Phase 7) | 🔲 Planned |
 
 ---
 
@@ -312,6 +381,10 @@ memory/
 | MemoryOS CLI | `$NEUTRON_ROOT/MemoryOS/src/index.js` |
 | VS Code extension | `$NEUTRON_ROOT/vscode-extension/extension.ts` |
 | VS Code templates | `$NEUTRON_ROOT/vscode-extension/templates/` |
+| MCP config | `$NEUTRON_ROOT/.mcp_config.json` |
+| Cursor extension | `$NEUTRON_ROOT/cursor-extension/` |
+| Cline plugin | `$NEUTRON_ROOT/cline-plugin/` |
+| Learned skills | `$NEUTRON_ROOT/skills/learned/` |
 | Backup files | `$NEUTRON_ROOT/.backup/` |
 
 ---

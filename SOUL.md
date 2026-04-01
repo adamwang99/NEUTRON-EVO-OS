@@ -126,7 +126,7 @@
 - Check: read `memory/.auto_confirm.json` → if `{"enabled": true, ...}` → skip the gate
 
 ## Version Info
-- **Current Version**: 4.2.0
+- **Current Version**: 4.3.0
 - **Last Updated**: 2026-04-01
 - **Status**: ACTIVE
 - **Philosophy**: ∫f(t)dt — Functional Credibility Over Institutional Inertia

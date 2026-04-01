@@ -1,0 +1,24 @@
+{
+  "name": "neutron-evo-os-cursor",
+  "version": "4.3.0",
+  "description": "NEUTRON EVO OS — Sovereign AI Agent Operating System for Cursor IDE",
+  "main": "src/cursor-plugin.js",
+  "scripts": {
+    "build": "tsc src/cursor-plugin.ts --outDir src --esModuleInterop",
+    "prepublish": "npm run build"
+  },
+  "keywords": [
+    "cursor",
+    "cursor-ide",
+    "ai",
+    "agent",
+    "neutron",
+    "mcp",
+    "context"
+  ],
+  "author": "adamwang99",
+  "license": "MIT",
+  "engines": {
+    "cursor": ">=0.1.0"
+  }
+}

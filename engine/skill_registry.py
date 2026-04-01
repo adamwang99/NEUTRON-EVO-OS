@@ -11,6 +11,7 @@ from typing import Optional
 
 NEUTRON_ROOT = Path(os.environ.get("NEUTRON_ROOT", Path(__file__).parent.parent))
 SKILLS_DIR = NEUTRON_ROOT / "skills" / "core"
+LEARNED_DIR = NEUTRON_ROOT / "skills" / "learned"
 
 # Module-level registry cache
 _registry: dict = {}
@@ -88,3 +89,48 @@ def has_logic(skill_name: str) -> bool:
     """True if the skill has a non-stub logic module."""
     skill = get_skill(skill_name)
     return bool(skill and skill["has_logic"])
+
+
+# ─── Learned Skills ─────────────────────────────────────────────────────────────
+
+
+def discover_learned_skills() -> dict:
+    """
+    Scan skills/learned/*/SKILL.md, parse frontmatter, return dict.
+    Same pattern as discover_skills() but for learned skills.
+    Returns: {skill_name: {dir, frontmatter, has_logic, has_validation, slug}}
+    """
+    if not LEARNED_DIR.exists():
+        return {}
+    result = {}
+    for skill_dir in LEARNED_DIR.iterdir():
+        if not skill_dir.is_dir() or skill_dir.name.startswith("."):
+            continue
+        skill_md = skill_dir / "SKILL.md"
+        if not skill_md.exists():
+            continue
+        fm = _parse_frontmatter(skill_md)
+        name = fm.get("name", skill_dir.name)
+        result[name] = {
+            "dir": skill_dir,
+            "slug": skill_dir.name,
+            "frontmatter": fm,
+            "type": "learned",
+            "has_logic": _is_real_module(skill_dir / "logic" / "__init__.py"),
+            "has_validation": _is_real_module(skill_dir / "validation" / "__init__.py"),
+        }
+    return result
+
+
+def get_all_skills() -> dict:
+    """
+    Return all skills (core + learned) merged into one dict.
+    Learned skills override core skills with the same name.
+    """
+    all_skills = {}
+    # Core first
+    all_skills.update(discover_skills())
+    # Learned overlay
+    for name, skill in discover_learned_skills().items():
+        all_skills[name] = skill
+    return all_skills

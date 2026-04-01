@@ -58,6 +58,7 @@ Every delivery gets rated 1-5 by the user.
 | checkpoint | 50 | — |
 | discovery | 50 | — |
 | acceptance_test | 50 | — |
+| learned | 35 | — |
 
 | CI Range | Status |
 |----------|--------|
@@ -75,6 +76,20 @@ Every delivery gets rated 1-5 by the user.
 | Full clean workflow (all steps) | +5 |
 | Discovery interview completed | +3 |
 | Acceptance passed first try | +5 |
+
+### Learned Skills CI Rules
+
+| Event | CI Delta |
+|-------|----------|
+| Learned skill invoked + reused successfully | +3 |
+| Learned skill promoted to core | +10 |
+| Learned skill not used in 30 days | -2 |
+| Learned skill initial CI | 35 |
+
+**Learned Skill Lifecycle:**
+```
+learned (CI=35) → proven (CI≥50) → core (CI≥70)
+```
 
 ---
 

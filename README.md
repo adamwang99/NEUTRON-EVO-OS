@@ -58,6 +58,35 @@ neutron status
 
 **That's it.** No `pip install`, no config files, no credentials needed.
 
+## IDE Integrations
+
+**Cursor IDE:**
+```bash
+make install-cursor   # or: bash install-cursor.sh
+```
+NEUTRON runs as MCP server (HTTP port 3100) inside Cursor.
+
+**Cline (VS Code extension):**
+```bash
+make install-cline   # or: bash install-cline.sh
+```
+NEUTRON MCP tools available directly in Cline.
+
+**MCP HTTP Server (manual):**
+```bash
+python3 -m mcp_server --transport http --port 3100
+# Health: curl http://localhost:3100/health
+```
+
+## Learned Skills
+
+NEUTRON learns from every session. Run distillation to find reusable patterns:
+```bash
+neutron learned distill   # Scan memory → find pattern candidates
+neutron learned register  # Save a pattern as learned skill
+neutron learned list     # Show all learned skills
+```
+
 What it does:
 - Installs `neutron` CLI to `~/.local/bin`
 - Sets `~/.claude/CLAUDE.md` so every Claude Code session starts with NEUTRON context
