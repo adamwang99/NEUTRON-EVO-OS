@@ -215,8 +215,9 @@ def _log_auto_action(step: str, notes: str):
     try:
         content = log_path.read_text(errors="replace") if log_path.exists() else f"# {today}\n"
         log_path.write_text(content + entry + "\n")
-    except Exception:
-        pass
+    except Exception as e:
+        import sys
+        print(f"[AUTO-CONFIRM] WARNING: Failed to log auto-action to {log_path}: {e}", file=sys.stderr)
 
 
 def _format_message(mode: str) -> str:

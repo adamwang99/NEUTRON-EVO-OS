@@ -11,12 +11,15 @@ from typing import Any
 
 def read_request() -> dict | None:
     """Read one JSON-RPC request from stdin. Blocks until line available."""
-    line = sys.stdin.readline()
+    try:
+        line = sys.stdin.readline()
+    except UnicodeDecodeError:
+        return {"jsonrpc": "2.0", "id": None, "error": {"code": -32700, "message": "Encoding error"}}
     if not line:
         return None
     try:
         return json.loads(line.strip())
-    except json.JSONDecodeError:
+    except (json.JSONDecodeError, ValueError):
         return {"jsonrpc": "2.0", "id": None, "error": {"code": -32700, "message": "Parse error"}}
 
 

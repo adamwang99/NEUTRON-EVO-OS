@@ -30,6 +30,26 @@ STATUS_FILE = MEMORY_DIR / ".acceptance_status.json"
 
 
 def run_acceptance_test(task: str, context: dict = None) -> dict:
+    # ── FIRST STEP: Check auto-confirm ─────────────────────────────────────────
+    # This must be the FIRST check — AI reads this file, not auto_confirm.py
+    try:
+        from engine.auto_confirm import should_skip, record_auto_action
+        if should_skip("acceptance"):
+            _record_pass({"notes": "auto-confirm"})
+            record_auto_action("acceptance", {})
+            return {
+                "status": "acceptance_auto_confirmed",
+                "output": (
+                    "[AUTO-CONFIRM] Acceptance test PASSED automatically.\n"
+                    "/ship is now UNLOCKED."
+                ),
+                "can_ship": True,
+                "ci_delta": 10,
+                "auto_confirmed": True,
+            }
+    except Exception:
+        pass  # Proceed with normal flow
+
     context = context or {}
     action = context.get("action", "prepare")
 

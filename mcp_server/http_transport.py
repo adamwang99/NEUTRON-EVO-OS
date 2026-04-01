@@ -12,10 +12,14 @@ import asyncio
 from pathlib import Path
 from typing import Any
 
+from contextvars import ContextVar
 from fastapi import FastAPI, Request, Response, HTTPException, Header
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
+
+# Per-request NEUTRON_ROOT — avoids race conditions across async handlers
+_current_neutron_root: ContextVar[str | None] = ContextVar("current_neutron_root", default=None)
 
 # Resolve NEUTRON_ROOT before any other imports
 _NEUTRON_ROOT = Path(os.environ.get("NEUTRON_ROOT", str(Path(__file__).parent.parent)))
@@ -51,11 +55,14 @@ def create_app() -> FastAPI:
         description="Model Context Protocol server over HTTP with API key auth",
     )
 
-    # CORS
+    # CORS — use server config (allow_credentials=True requires specific origins, not "*")
+    from mcp_server import config as _cfg
+    server_cfg = _cfg.get_server_config()
+    cors_origins = server_cfg.get("cors_origins", ["*"])
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],
-        allow_credentials=True,
+        allow_origins=cors_origins,
+        allow_credentials=False,  # Never True with wildcard origins
         allow_methods=["*"],
         allow_headers=["*"],
     )
@@ -82,6 +89,10 @@ def create_app() -> FastAPI:
     @app.get("/keys")
     async def list_keys(x_neutron_api_key: str = Header(...)):
         """List API keys (shows key hints only, not full keys)."""
+        # Rate limit check
+        rl_allowed, rl_err = auth.check_rate_limit(x_neutron_api_key)
+        if not rl_allowed:
+            raise HTTPException(status_code=429, detail=rl_err)
         is_auth, _, err = auth.authenticate({"x-neutron-api-key": x_neutron_api_key})
         if not is_auth:
             raise HTTPException(status_code=401, detail=err)
@@ -96,6 +107,10 @@ def create_app() -> FastAPI:
         x_neutron_api_key: str = Header(...),
     ):
         """Create a new API key."""
+        # Rate limit check
+        rl_allowed, rl_err = auth.check_rate_limit(x_neutron_api_key)
+        if not rl_allowed:
+            raise HTTPException(status_code=429, detail=rl_err)
         is_auth, _, err = auth.authenticate({"x-neutron-api-key": x_neutron_api_key})
         if not is_auth:
             raise HTTPException(status_code=401, detail=err)
@@ -122,18 +137,17 @@ def create_app() -> FastAPI:
                 content={"jsonrpc": "2.0", "id": body.get("id"), "error": {"code": -32603, "message": err}},
             )
 
-        # Set NEUTRON_ROOT for this request from auth
+        # Set per-request NEUTRON_ROOT via contextvar (thread/async-safe, no race)
         if api_key != "_anonymous":
             resolved_root = auth.resolve_neutron_root(api_key)
             if resolved_root:
+                _current_neutron_root.set(resolved_root)
+                # Also set env var so that any downstream code that reads
+                # os.environ["NEUTRON_ROOT"] still works correctly
                 os.environ["NEUTRON_ROOT"] = resolved_root
-                sys.path.insert(0, resolved_root)
 
         # Handle JSON-RPC request
-        # Need to re-import transport with updated NEUTRON_ROOT
         from mcp_server import transport as _transport_mod
-        # The transport module reads tools/resources/prompts at call time,
-        # so setting env var before calling is sufficient
 
         try:
             result = _handle_rpc(body)
@@ -168,6 +182,7 @@ def create_app() -> FastAPI:
         if api_key != "_anonymous":
             resolved_root = auth.resolve_neutron_root(api_key)
             if resolved_root:
+                _current_neutron_root.set(resolved_root)
                 os.environ["NEUTRON_ROOT"] = resolved_root
 
         from mcp_server import transport as _transport_mod

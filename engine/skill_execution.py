@@ -139,15 +139,42 @@ def _run_validation(skill_name: str, inputs: dict) -> Optional[str]:
 def _execute_logic(skill_name: str, task: str, context: dict) -> dict:
     """
     Call the skill's run_<skill_name>(task, context) function via importlib.
+    Supports both core skills (skills.core.<name>) and learned skills
+    (skills.learned.<slug>).
     """
-    try:
-        mod = importlib.import_module(f"skills.core.{skill_name}.logic")
-    except ImportError as e:
-        return {"status": "import_error", "output": str(e), "ci_delta": 0}
+    # Determine which package to import from
+    if skill_name == "learned":
+        # Special case: learned skill invocation
+        # skill_name in context is the specific learned skill slug/name
+        learned_skill = context.get("skill", context.get("skill_name", "")) if context else ""
+        if not learned_skill:
+            return {"status": "error", "output": "No learned skill name provided in context", "ci_delta": 0}
+        mod_path = f"skills.learned.{learned_skill}.logic"
+        fn_prefix = f"run_learned_{learned_skill}"
+    else:
+        # Check registry: is this a learned skill with a custom slug?
+        try:
+            from engine.skill_registry import get_skill
+            skill = get_skill(skill_name)
+            if skill and skill.get("type") == "learned":
+                slug = skill.get("slug", skill_name)
+                mod_path = f"skills.learned.{slug}.logic"
+                fn_prefix = f"run_learned_{slug}"
+            else:
+                mod_path = f"skills.core.{skill_name}.logic"
+                fn_prefix = f"run_{skill_name}"
+        except Exception:
+            mod_path = f"skills.core.{skill_name}.logic"
+            fn_prefix = f"run_{skill_name}"
 
-    run_fn = getattr(mod, f"run_{skill_name}", None)
+    try:
+        mod = importlib.import_module(mod_path)
+    except ImportError as e:
+        return {"status": "import_error", "output": f"{mod_path}: {e}", "ci_delta": 0}
+
+    run_fn = getattr(mod, fn_prefix, None)
     if run_fn is None:
-        return {"status": "no_run_function", "output": f"run_{skill_name}() not found", "ci_delta": 0}
+        return {"status": "no_run_function", "output": f"{fn_prefix}() not found in {mod_path}", "ci_delta": 0}
 
     try:
         return run_fn(task, context)

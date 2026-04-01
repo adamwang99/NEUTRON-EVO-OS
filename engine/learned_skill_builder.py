@@ -432,14 +432,3 @@ def _action_stale() -> dict:
             "stale_skills": stale,
         }
     return {"status": "ok", "output": "No stale learned skills.", "stale_skills": []}
-
-
-# Internal helper
-def _record_invocation(skill_name: str):
-    inv = _load_invocations()
-    now = datetime.now().isoformat()
-    inv[skill_name] = {
-        "last_invoked": now,
-        "count": inv.get(skill_name, {}).get("count", 0) + 1,
-    }
-    _save_invocations(inv)

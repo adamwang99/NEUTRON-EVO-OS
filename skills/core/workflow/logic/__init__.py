@@ -432,9 +432,10 @@ def _step_ship(task: str, context: dict) -> dict:
             "ci_delta": 0,
         }
 
-    # Archive SPEC.md
+    # Archive SPEC.md (save before deletion so we have the content)
     spec_path = _NEUTRON_ROOT / "SPEC.md"
-    if spec_path.exists():
+    spec_exists = spec_path.exists()
+    if spec_exists:
         MEMORY_DIR.mkdir(exist_ok=True)
         archived_spec = MEMORY_DIR / f"SPEC_shipped_{datetime.now().strftime('%Y%m%d_%H%M%S')}.md"
         shutil.copy2(spec_path, archived_spec)
@@ -443,8 +444,33 @@ def _step_ship(task: str, context: dict) -> dict:
     # Present delivery summary
     summary = context.get("delivery_summary", f"Completed: {task}")
 
-    # User rating prompt
-    rating_prompt = """
+    # Record the shipment BEFORE rating so we have a shipment_id to attach rating to
+    from engine.rating import record_shipment
+    shipment_result = record_shipment(
+        project=task,
+        complexity="MEDIUM",
+        steps_completed=["explore", "discovery", "spec", "build", "acceptance"],
+        outcome="shipped",
+    )
+    shipment_id = shipment_result.get("shipment_id")
+
+    # If user already provided a rating in context, record it immediately
+    rating = context.get("rating")
+    if rating and shipment_id:
+        from engine.rating import add_rating
+        add_rating(shipment_id, rating, notes=context.get("notes", ""))
+
+    gate["current_step"] = "ship"
+    gate["shipped_at"] = datetime.now().isoformat()
+    _save_gate(gate)
+
+    _log_milestone("ship", task, "Delivered and archived", ci_delta=15)
+
+    # User rating prompt (always shown unless already provided)
+    if rating:
+        rating_prompt = f"✅ Rating recorded: {rating}/5 — Thank you!"
+    else:
+        rating_prompt = """
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 📦 DELIVERY COMPLETE
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -462,16 +488,11 @@ Rate your satisfaction (1-5):
 Call: workflow(step='ship', rating=4, notes='...')
 """
 
-    gate["current_step"] = "ship"
-    gate["shipped_at"] = datetime.now().isoformat()
-    _save_gate(gate)
-
-    _log_milestone("ship", task, "Delivered and archived", ci_delta=15)
-
     return {
         "status": "delivered",
         "output": rating_prompt,
         "delivery_summary": summary,
+        "shipment_id": shipment_id,
         "ci_delta": 15,
     }
 

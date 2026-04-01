@@ -4,9 +4,8 @@ NEUTRON EVO OS — CLI
 Usage: neutron [command] [args...]
 
 Commands:
-  neutron run <task>       Run a task through the full pipeline
-  neutron explore <task>   Explore a problem space
-  neutron discover <idea>   Run discovery interview
+  neutron run <task>        Run a task through the full pipeline
+  neutron discover <idea>    Run discovery interview
   neutron spec [task]      Write SPEC.md (USER REVIEW gate)
   neutron build [task]     Build implementation
   neutron verify [task]    Run verification

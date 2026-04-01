@@ -240,6 +240,7 @@ Workflow CI updates only:
 | Discovery | `/discovery` | User answers questions |
 | Spec | `/spec` | **USER APPROVES SPEC** |
 | Build | `/build` | SPEC approved |
+| Verify | `/verify` | None (runs pytest) |
 | Acceptance | `/acceptance_test` | **USER RUNS + CONFIRMS** |
 | Ship | `/ship` | Acceptance passed |
 | Auto | `/auto` | Control auto-confirm mode |

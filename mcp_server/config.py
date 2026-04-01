@@ -16,13 +16,18 @@ _CONFIG_FILE = _NEUTRON_ROOT / "memory" / ".mcp_config.json"
 
 
 def _load() -> dict:
-    """Load MCP config from disk. Creates default if missing."""
+    """Load MCP config from disk. Creates default if missing/corrupted."""
     if _CONFIG_FILE.exists():
         try:
             return json.loads(_CONFIG_FILE.read_text())
         except Exception:
-            pass
-    # First run — create and persist default config
+            # Corrupted — backup before overwriting
+            import shutil, datetime
+            backup_dir = _CONFIG_FILE.parent / ".config_backup"
+            backup_dir.mkdir(exist_ok=True)
+            ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+            shutil.copy2(_CONFIG_FILE, backup_dir / f"mcp_config.corrupted.{ts}.json")
+    # First run or recovery — create and persist default config
     cfg = _default_config()
     _save(cfg)
     return cfg

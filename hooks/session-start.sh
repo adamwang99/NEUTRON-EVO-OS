@@ -77,8 +77,14 @@ else
 fi
 
 # ── Load checkpoint if exists ────────────────────────────────────────────────
-if [ -f "$NEUTRON_ROOT/memory/.last_checkpoint.md" ]; then
-    echo ""
-    echo "📋 Last checkpoint:"
-    head -5 "$NEUTRON_ROOT/memory/.last_checkpoint.md" 2>/dev/null | sed 's/^/   /'
+# Checkpoint CLI writes to memory/YYYY-MM-DD.md as "## [HH:MM] — Task:" entries.
+# Find the most recent memory log and show the last checkpoint entry.
+LATEST_LOG=$(find "$MEMORY_DIR" -maxdepth 1 -name "[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9].md" -type f | sort -r | head -1)
+if [ -n "$LATEST_LOG" ]; then
+    LAST_CP=$(grep -A 4 "^## \[" "$LATEST_LOG" | tail -5 2>/dev/null)
+    if [ -n "$LAST_CP" ]; then
+        echo ""
+        echo "📋 Last checkpoint:"
+        echo "$LAST_CP" | sed 's/^/   /'
+    fi
 fi
