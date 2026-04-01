@@ -101,11 +101,26 @@ ITERATE (if acceptance failed) or DONE
    - Problem statement
    - Success criteria (measurable, not "works well")
    - Tech stack (AI recommends, user confirms)
+   - **UI Library** (if frontend project → call `ui_library` skill → auto-suggest best library)
    - Out of scope (explicit exclusions)
    - Acceptance criteria — what USER will verify at acceptance test
    - Edge cases
    - Files to create/modify/delete
 3. Present SPEC to user for review
+
+**Tech Stack + UI Library Check (auto-triggered for frontend projects):**
+```
+After tech stack is confirmed (React / Vue / Svelte / Next.js / etc.):
+  1. Check USER.md for UI_PREFERENCES (if any)
+  2. If frontend project:
+     → Call: route_ui_library(project_type, tech_stack, requirements)
+     → Best library suggested automatically
+     → Show in SPEC.md: ## Tech Stack
+        - Framework: <selected>
+        - UI Library: <recommended> (install: <command>)
+  3. User confirms or changes UI library choice
+  4. Proceed to build
+```
 
 **HARD GATE — USER REVIEW**:
 ```

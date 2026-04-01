@@ -1,0 +1,120 @@
+{
+  "libraries": [
+    {
+      "name": "shadcn/ui",
+      "aliases": ["shadcn", "shadcn-ui", "radix ui", "radix"],
+      "stack": ["react", "next.js", "typescript"],
+      "use_cases": ["dashboard", "admin", "saas", "modern web app", "landing"],
+      "bundle": "tree-shakeable (import per component, ~0KB base)",
+      "customizability": "HIGH — copy source, edit directly, full control",
+      "style": "headless + tailwind, minimal default style, clean",
+      "motion": "native CSS/JS, framer-motion optional",
+      "repo": "https://github.com/shadcn-ui/ui",
+      "docs": "https://ui.shadcn.com",
+      "install": "npx shadcn@latest init && npx shadcn@latest add button",
+      "components_count": "40+ components",
+      "when": "Khi cần tùy biến cao, dùng Next.js/React, muốn control source, dashboard/SaaS app",
+      "dont_when": "Vue/Svelte project, cần component ngay không muốn custom, project nhỏ"
+    },
+    {
+      "name": "Ant Design",
+      "aliases": ["antd", "ant design", "antdesign", "ant-design"],
+      "stack": ["react", "vue", "angular"],
+      "use_cases": ["enterprise dashboard", "data-heavy", "admin panel", "B2B SaaS", "CRM", "CMS"],
+      "bundle": "~500KB gzipped (full), modular available",
+      "customizability": "MEDIUM — Less/Sass variables + ConfigProvider",
+      "style": "Professional, dense, enterprise Chinese tech aesthetic",
+      "motion": "built-in animations, transitions",
+      "repo": "https://github.com/ant-design/ant-design",
+      "docs": "https://ant.design",
+      "install": "npm install antd",
+      "components_count": "60+ components",
+      "when": "Enterprise dashboard, nhiều forms/tables/data, team lớn, B2B SaaS, CRM",
+      "dont_when": "Landing page, marketing site, performance-critical mobile, small project"
+    },
+    {
+      "name": "Mantine",
+      "aliases": ["mantine", "@mantine/core", "mantine ui"],
+      "stack": ["react", "next.js"],
+      "use_cases": ["full-featured app", "forms", "data-rich", "mobile-first", "dashboard", "social"],
+      "bundle": "~200KB core, fully modular",
+      "customizability": "HIGH — CSS-in-JS (Emotion), full theme provider + overrides",
+      "style": "Clean, modern, good default aesthetics, mobile-first",
+      "motion": "built-in motion system + @mantine/hooks (50+ hooks)",
+      "repo": "https://github.com/mantinedev/mantine",
+      "docs": "https://mantine.dev",
+      "install": "npm install @mantine/core @mantine/hooks",
+      "components_count": "100+ components",
+      "when": "Cần ~100 components sẵn có, hooks mạnh mẽ, React project, forms-heavy, mobile-first",
+      "dont_when": "Vue/Svelte, cần nhẹ nhất có thể, project đơn giản"
+    },
+    {
+      "name": "Magic UI",
+      "aliases": ["magicui", "magic ui", "magic-ui"],
+      "stack": ["react", "next.js", "vue", "svelte", "html", "remix", "astro"],
+      "use_cases": ["landing page", "hero sections", "marketing", "animation-heavy", "portfolio", "showcase"],
+      "bundle": "per-component, lightweight",
+      "customizability": "MEDIUM — copy source, edit directly, framer-motion based",
+      "style": "Beautiful, motion-heavy, modern landing aesthetic",
+      "motion": "EXCELLENT — built-in Framer Motion, stunning transitions",
+      "repo": "https://github.com/magicuidev/magicui",
+      "docs": "https://magicui.design",
+      "install": "npx magicsync@latest add button (or copy component directly)",
+      "components_count": "30+ components",
+      "when": "Landing page, marketing site, cần hiệu ứng đẹp nhanh, portfolio, showcase",
+      "dont_when": "Data-heavy dashboard, enterprise app, cần accessibility cao, form-heavy"
+    },
+    {
+      "name": "DaisyUI",
+      "aliases": ["daisyui", "daisy ui"],
+      "stack": ["html", "vue", "svelte", "react", "any framework", "tailwind"],
+      "use_cases": ["any", "landing", "dashboard", "simple app", "admin", "blog", "CMS"],
+      "bundle": "~10KB gzipped (adds on Tailwind CSS)",
+      "customizability": "MEDIUM — Tailwind utility classes + DaisyUI theme tokens",
+      "style": "Clean, utility-first, 38+ themes, aesthetic options",
+      "motion": "Tailwind animation classes, not built-in",
+      "repo": "https://github.com/saadeghi/daisyui",
+      "docs": "https://daisyui.com",
+      "install": "npm install -D daisyui@latest tailwindcss && npx tailwindcss init",
+      "components_count": "40+ components (CSS classes)",
+      "when": "Nhẹ nhất có thể, dùng Tailwind CSS, bất kỳ framework nào, project nhỏ-vừa",
+      "dont_when": "Cần nhiều components phức tạp có sẵn (tables, date pickers deep), full enterprise"
+    }
+  ],
+  "decision_rules": [
+    {
+      "rule": "framework_first",
+      "description": "Framework match is the primary filter — if library doesn't support the stack, score 0"
+    },
+    {
+      "rule": "landing_priority",
+      "keywords": ["landing", "marketing", "hero", "portfolio", "showcase"],
+      "top_libraries": ["Magic UI", "DaisyUI", "shadcn/ui"]
+    },
+    {
+      "rule": "enterprise_priority",
+      "keywords": ["dashboard", "admin", "enterprise", "B2B", "CRM", "data-heavy"],
+      "top_libraries": ["Ant Design", "shadcn/ui", "Mantine"]
+    },
+    {
+      "rule": "performance_priority",
+      "keywords": ["lightweight", "fast", "performance", "small bundle"],
+      "top_libraries": ["DaisyUI", "shadcn/ui"]
+    },
+    {
+      "rule": "customizability_priority",
+      "keywords": ["customize", "tùy biến", "control", "modify"],
+      "top_libraries": ["shadcn/ui", "Mantine", "Magic UI"]
+    },
+    {
+      "rule": "motion_priority",
+      "keywords": ["animation", "motion", "effects", "transitions", "hiệu ứng"],
+      "top_libraries": ["Magic UI", "Mantine", "Ant Design"]
+    },
+    {
+      "rule": "components_priority",
+      "keywords": ["many components", "full-featured", "components ready"],
+      "top_libraries": ["Ant Design", "Mantine", "shadcn/ui"]
+    }
+  ]
+}

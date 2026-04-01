@@ -76,9 +76,17 @@ INTERVIEW_QUESTIONS = [
         "required": True,
     },
     {
-        "id": "scale",
+        "id": "ui_library",
         "group": "B — Technical Reality",
         "number": 6,
+        "question": "UI library / frontend framework preference? (If frontend project)",
+        "hint": "For web apps: do you have a preferred UI library?\n- No preference (I\'ll suggest the best for your project)\n- React + shadcn/ui / Ant Design / Mantine / Vue / Svelte / Other\n- DaisyUI (lightweight, Tailwind-based)\n- Magic UI (animation-heavy landing pages)\n- I\'ll build it myself (vanilla CSS/HTML)",
+        "required": False,
+    },
+    {
+        "id": "scale",
+        "group": "B — Technical Reality",
+        "number": 7,
         "question": "What's the expected scale? (Number of users, data volume, traffic. Or: 'just me testing for now'.)",
         "hint": "Honest answer here prevents expensive rewrites later.",
         "required": True,
@@ -87,7 +95,7 @@ INTERVIEW_QUESTIONS = [
     {
         "id": "end_users",
         "group": "C — User Experience",
-        "number": 7,
+        "number": 8,
         "question": "Who will actually USE this? (Technical skill level? Internal team or external customers?)",
         "hint": "A tool used by developers is different from one used by non-technical people.",
         "required": True,
@@ -95,7 +103,7 @@ INTERVIEW_QUESTIONS = [
     {
         "id": "first_screen",
         "group": "C — User Experience",
-        "number": 8,
+        "number": 9,
         "question": "What does the first screen look like? Describe the main screen users see when they open the app.",
         "hint": "Words are fine. 'A login screen' or 'A dashboard showing X, Y, Z'.",
         "required": True,
@@ -103,7 +111,7 @@ INTERVIEW_QUESTIONS = [
     {
         "id": "ui_requirements",
         "group": "C — User Experience",
-        "number": 9,
+        "number": 10,
         "question": "Any UI/branding requirements? (Specific colors, design system, or 'I just want it to work and look clean')",
         "hint": "Design last. Get function right first.",
         "required": False,
@@ -112,7 +120,7 @@ INTERVIEW_QUESTIONS = [
     {
         "id": "user_scenarios",
         "group": "D — Edge Cases",
-        "number": 10,
+        "number": 11,
         "question": "You mentioned [scenario] — what should happen in that case?",
         "hint": "If you already described an edge case in your prompt, expand on it here.",
         "required": False,
@@ -120,7 +128,7 @@ INTERVIEW_QUESTIONS = [
     {
         "id": "error_handling",
         "group": "D — Edge Cases",
-        "number": 11,
+        "number": 12,
         "question": "What should the system do when something breaks? (Fail silently? Show error? Retry? Email you?)",
         "hint": "Error handling philosophy: 'fail fast and loud' vs 'graceful degradation'.",
         "required": True,
@@ -128,7 +136,7 @@ INTERVIEW_QUESTIONS = [
     {
         "id": "security",
         "group": "D — Edge Cases",
-        "number": 12,
+        "number": 13,
         "question": "What data needs to be kept private or secure? (PII, credentials, business data?)",
         "hint": "If handling user data: GDPR considerations. If sensitive: encryption at rest.",
         "required": False,
