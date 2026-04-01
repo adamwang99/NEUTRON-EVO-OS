@@ -1,73 +1,57 @@
-# NEUTRON EVO OS
+# NEUTRON EVO OS — Global Context
 
-This project runs on **NEUTRON EVO OS** — a sovereign intelligence operating system built on ∫f(t)dt: Functional Credibility Over Institutional Inertia.
+## 🚨 MANDATORY FIRST STEP
 
-## ⚡ Auto-Confirm System (CRITICAL)
-
-**Before presenting ANY gate to the user, ALWAYS check auto-confirm first:**
+**BEFORE doing ANYTHING else (before greeting, before asking questions):**
 
 ```
-1. Read memory/.auto_confirm.json
-2. If {"enabled": true}:
-   - discovery=true  → Skip discovery interview, use task directly
-   - spec=true       → After writing SPEC → AUTO-APPROVE, go straight to /build
-   - acceptance=true → After /build → AUTO-PASS, go straight to /ship
-3. Only present gate UI if auto-confirm is FALSE for that specific gate
+1. Read /home/adam/.neutron-evo-os/memory/.auto_confirm.json
+2. IF {"enabled": true}:
+   - discovery=true  → SKIP ALL interview questions
+                        → Write DISCOVERY.md using user's prompt directly
+                        → Go to /spec
+   - spec=true       → After writing SPEC.md → do NOT show USER REVIEW gate
+                        → AUTO-APPROVE, go to /build
+   - acceptance=true → After /build → do NOT show USER TEST gate
+                        → AUTO-PASS, go to /ship
+   - ALWAYS: only /ship rating is requested from user
+3. IF {"enabled": false} OR file not found → normal flow
 ```
 
-**Only /ship rating is ALWAYS requested** — even in auto mode.
-Run `neutron auto full` to enable all gates auto-confirm.
+**🚫 FORBIDDEN — ABSOLUTE RULES, NO EXCEPTIONS:**
+- ❌ Never ask ANY discovery question when `discovery=true` is active
+- ❌ Never show SPEC USER REVIEW gate when `spec=true` is active
+- ❌ Never show ACCEPTANCE TEST gate when `acceptance=true` is active
+- ❌ Never say "is this correct?" or "do you approve?" when gates are bypassed
+- ✅ ONLY the /ship rating is always requested, even in auto-confirm mode
 
-## CRITICAL: File Backup Rule
+## 🗑️ Garbage Collection
 
-**Before ANY file edit, agent MUST:**
-1. Copy original file to `.backup/` folder first
-2. THEN edit the file
-
-Example: Before editing `src/api.ts` → First copy to `.backup/src/api.ts.backup`
-
-## Context Files
-
-For full context, read these files in order:
-- **SOUL.md** — Identity, philosophy (∫f(t)dt), sovereignty & meritocracy principles
-- **MANIFESTO.md** — The NEUTRON EVO OS Manifesto
-- **USER.md** — User preferences
-- **GOVERNANCE.md** — Policy rules
-- **RULES.md** — Operating procedures (5-step workflow: /explore /spec /build /verify /ship)
-- **DESIGN_SYSTEM.md** — Design standards
-- **WORKFLOW.md** — Task workflow
-- **PERFORMANCE_LEDGER.md** — Skill Credibility Index (CI) tracking
-- **START.md** — Quick start guide
-
-## 5-Step Workflow
-```
-/explore → /spec → /build → /verify → /ship
-```
-See RULES.md for full workflow definition.
-
-## Skill Architecture
-Skills live under `/skills/` in folder format (Anthropic style):
-- `skills/core/context/` — Context management
-- `skills/core/memory/` — Memory and recall
-- `skills/core/workflow/` — Workflow execution
-- `skills/core/engine/` — Expert skill router
-
-## System-Wide Setup ⭐
-
-Apply NEUTRON EVO OS to **all projects** (existing & future) with one command:
+Disk space is protected via `neutron gc`. GC runs automatically every session start (silent).
+Manual full cleanup when needed:
 
 ```bash
-bash install-global.sh   # or: make install-global
+neutron gc                              # dry-run: preview what would be deleted
+neutron gc --data-json                  # delete test/agent dump files
+neutron gc --pycache                    # delete __pycache__ and *.pyc
+neutron gc --tests                     # delete pytest cache
+neutron gc --pycache --tests --data-json  # full cleanup (most common)
+neutron gc --retention 3               # archived/ retention: 3 days
+neutron gc --large 50                  # delete files > 50MB outside git
+neutron gc --empty                     # remove empty directories
 ```
 
-This installs globally:
-- `~/.claude/settings.json` — SessionStart hook loads NEUTRON context
-- `~/.claude/CLAUDE.md` — Global fallback context for all sessions
-- `~/.neutron-evo-os/` — Full NEUTRON EVO OS repo
+GC runs automatically on every Claude Code session start (silent, no output).
+Use `neutron gc --dry-run` to preview before running.
 
-VS Code Extension (recommended for GUI users):
-```bash
-code --install-extension vscode-extension/neutron-evo-os-4.1.0.vsix
-```
+## ⚡ Quick Reference
 
-See README.md for full system-wide installation guide.
+| Task | Command |
+|------|---------|
+| Auto-confirm ON | `neutron auto full` |
+| Auto-confirm OFF | `neutron auto disable` |
+| System status | `neutron status` |
+| Version info | `neutron version` |
+| Garbage collection | `neutron gc --pycache --tests --data-json` |
+| Backup before upgrade | `neutron protect --dry-run` |
+| Run Dream Cycle | `neutron dream` |
