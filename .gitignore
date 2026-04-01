@@ -61,3 +61,4 @@ memory/discoveries/
 
 # npm garbage
 =npm-debug.log*
+=*
