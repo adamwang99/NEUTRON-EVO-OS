@@ -34,6 +34,7 @@ import argparse
 import json
 import sys
 import os
+from datetime import datetime
 from pathlib import Path
 
 # Ensure NEUTRON_ROOT is set and repo root in path
@@ -48,6 +49,7 @@ from engine.expert_skill_router import route_task, audit as engine_audit
 from engine import auto_confirm
 from engine.rating import summarize as rating_summarize
 from engine.user_decisions import summarize as decisions_summarize
+from engine import __version__ as NEUTRON_VERSION
 
 
 # ─── Formatters ────────────────────────────────────────────────────────────────
@@ -445,15 +447,120 @@ def cmd_dream(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_version(args: argparse.Namespace) -> int:
+    """Show version info."""
+    from engine.expert_skill_router import audit as engine_audit
+    from engine import auto_confirm
+    from engine.rating import summarize as rating_summarize
+
+    print(_header(f"NEUTRON EVO OS v{NEUTRON_VERSION}"))
+    print(f"  Owner: Adam Wang (Vương Hoàng Tuấn)")
+    print(f"  Philosophy: ∫f(t)dt — Functional Credibility Over Institutional Inertia")
+    print(f"  NEUTRON_ROOT: {_NEUTRON_ROOT}")
+
+    # Health
+    health = engine_audit()
+    print(f"\n  System Health: {health['status'].upper()}")
+    print(f"  Overall CI: {health['overall_ci']}")
+    print(f"  Skills: {health['skill_count']}")
+
+    # Ratings
+    ratings = rating_summarize()
+    if ratings["total"] > 0:
+        print(f"\n  Shipments: {ratings['total']} total, {ratings['rated']} rated")
+        if ratings["average_rating"]:
+            print(f"  Avg Rating: {ratings['average_rating']}/5")
+
+    # Auto-confirm
+    gates = auto_confirm.get_gates()
+    mode = gates.get("mode", "disabled")
+    icon = "🔓" if gates.get("enabled") else "🔴"
+    print(f"\n  {icon} Auto-Confirm: {mode}")
+
+    print()
+    return 0
+
+
+def cmd_protect(args: argparse.Namespace) -> int:
+    """
+    Run Upgrade Protection Protocol: backup protected files before upgrade.
+    Per RULES.md — MANDATORY before git pull, pip install, npm install, install scripts.
+    """
+    import shutil
+    import glob
+
+    print(_header("🔒 Upgrade Protection Protocol"))
+    print(f"  NEUTRON_ROOT: {_NEUTRON_ROOT}\n")
+
+    # Protected files list
+    protected = [
+        ".env",
+        ".env.local",
+        "memory/shipments.json",
+        "memory/user_decisions.json",
+        "memory/.mcp_config.json",
+        "memory/.auto_confirm.json",
+        "memory/handoff*.md",
+        "memory/rss*.json",
+        "USER.md",
+    ]
+
+    backed_up = []
+    skipped = []
+    errors = []
+
+    for pattern in protected:
+        full_pattern = _NEUTRON_ROOT / pattern.replace("*", "")
+        if "*" in pattern:
+            # Glob for patterns like handoff*.md
+            matches = list(_NEUTRON_ROOT.glob(pattern))
+        else:
+            matches = [full_pattern] if full_pattern.exists() else []
+
+        for path in matches:
+            if not path.is_file():
+                continue
+            ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+            backup_name = f"{path.name}.{ts}.bak"
+            backup_path = _NEUTRON_ROOT / ".backup" / backup_name
+            if args.dry_run:
+                print(f"  [DRY RUN] Would backup: {path.relative_to(_NEUTRON_ROOT)} → .backup/{backup_name}")
+                backed_up.append(str(path))
+                continue
+            try:
+                (_NEUTRON_ROOT / ".backup").mkdir(exist_ok=True)
+                shutil.copy2(path, backup_path)
+                print(f"  ✅ Backed up: {path.relative_to(_NEUTRON_ROOT)}")
+                backed_up.append(str(path))
+            except Exception as e:
+                print(f"  ❌ Failed: {path.relative_to(_NEUTRON_ROOT)} — {e}")
+                errors.append(str(path))
+
+    print(f"\n{_bold('Summary')}")
+    print(f"  Backed up: {len(backed_up)} files")
+    if errors:
+        print(f"  Errors: {len(errors)}")
+    if args.dry_run:
+        print(f"\n  ⚠️  DRY RUN — no files were actually backed up")
+    else:
+        print(f"  📁 Backup location: {_NEUTRON_ROOT}/.backup/")
+        print(f"\n  Next: safe to run git pull / pip install / install.sh")
+    print()
+    return 0
+
+
 # ─── Argument Parser ──────────────────────────────────────────────────────────
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="neutron",
-        description="NEUTRON EVO OS — AI Agent Operating System",
+        description=f"NEUTRON EVO OS v{NEUTRON_VERSION} — AI Agent Operating System",
         formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
+        epilog=f"""
+Version: {NEUTRON_VERSION}
 Examples:
+  neutron version                Show version info
+  neutron protect                Run Upgrade Protection Protocol (backup before upgrade)
   neutron discover "Build a trading bot"
   neutron spec "Build auth system" --content "..."
   neutron auto full
@@ -573,6 +680,15 @@ Examples:
     # dream
     p = sub.add_parser("dream", help="Run Dream Cycle")
     p.set_defaults(func=cmd_dream)
+
+    # version
+    p = sub.add_parser("version", help="Show version info")
+    p.set_defaults(func=cmd_version)
+
+    # protect
+    p = sub.add_parser("protect", help="Run Upgrade Protection Protocol — backup protected files before upgrade")
+    p.add_argument("--dry-run", action="store_true", help="Show what would be backed up without backing up")
+    p.set_defaults(func=cmd_protect)
 
     return parser
 
