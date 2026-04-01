@@ -191,41 +191,43 @@ MCPJSON
     CLAUDE_SETTINGS="$HOME/.claude/settings.json"
     mkdir -p "$HOME/.claude"
 
-    # Add hook using jq if available, else sed
-    if command -v jq &>/dev/null; then
-        if [ -f "$CLAUDE_SETTINGS" ]; then
-            # Only add if SessionStart not already pointing to NEUTRON
-            if ! grep -q "session-start\|NEUTRON.*hook" "$CLAUDE_SETTINGS" 2>/dev/null; then
-                cp "$CLAUDE_SETTINGS" "$CLAUDE_SETTINGS.backup"
-                jq --arg HOOK "$HOOK_SCRIPT" \
-                   '.hooks.SessionStart = [{"hooks": [{"type": "command", "command": ("bash \"" + $HOOK + "\"")}]}] | del(.hooks[][] | select(.type == "command" and (.command // "") | contains("session-start") | not))' \
-                   "$CLAUDE_SETTINGS" > "$CLAUDE_SETTINGS.tmp" && mv "$CLAUDE_SETTINGS.tmp" "$CLAUDE_SETTINGS"
-                ok "SessionStart hook added"
-            else
-                ok "SessionStart hook already configured"
-            fi
-        else
-            cat > "$CLAUDE_SETTINGS" << EOF
-{
-  "permissions": {
-    "defaultMode": "acceptEdits",
-    "allow": ["Bash", "Read", "Edit", "Write", "Glob", "Grep", "WebFetch", "mcp__*"]
-  },
-  "hooks": {
-    "SessionStart": [{
-      "hooks": [{
-        "type": "command",
-        "command": "bash \"$HOOK_SCRIPT\""
-      }]
+    # Use Python for safe JSON merging (no jq dependency)
+    python3 - "$CLAUDE_SETTINGS" "$HOOK_SCRIPT" << 'PYEOF'
+import json, sys, os
+settings_path = sys.argv[1]
+hook_script = sys.argv[2]
+
+data = {}
+if os.path.exists(settings_path):
+    content = open(settings_path).read()
+    if content.strip():
+        try:
+            data = json.loads(content)
+        except json.JSONDecodeError:
+            print("WARNING: settings.json corrupted, creating fresh", file=sys.stderr)
+            data = {}
+
+# Only add if not already present
+existing = data.get("hooks", {}).get("SessionStart", [])
+already_has = any(
+    isinstance(h, dict) and "command" in h and "session-start" in h.get("command", "")
+    for lst in existing
+    if isinstance(lst, dict) and "hooks" in lst
+    for h in lst.get("hooks", [])
+)
+if already_has:
+    print("OK: SessionStart hook already configured")
+else:
+    data["hooks"] = data.get("hooks", {})
+    data["hooks"]["SessionStart"] = [{
+        "hooks": [{"type": "command", "command": f"bash \"{hook_script}\""}]
     }]
-  }
-}
-EOF
-            ok "Created settings.json with SessionStart hook"
-        fi
-    else
-        warn "jq not found — add SessionStart hook manually if needed"
-    fi
+    with open(settings_path, "w") as f:
+        json.dump(data, f, indent=2)
+    print("OK: SessionStart hook added")
+PYEOF
+
+    ok "SessionStart hook installed"
 fi
 
 # ══════════════════════════════════════════════════════════════════════════════
