@@ -32,9 +32,10 @@ from __future__ import annotations
 
 import argparse
 import json
+import shutil
 import sys
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 # Ensure NEUTRON_ROOT is set and repo root in path
@@ -481,6 +482,141 @@ def cmd_version(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_gc(args: argparse.Namespace) -> int:
+    """
+    Garbage Collection: clean up disk space.
+    Removes: archived/ over retention, __pycache__, *.pyc, old backups, test cache.
+    """
+    import glob
+
+    print(_header("🗑️  Garbage Collection"))
+    print(f"  NEUTRON_ROOT: {_NEUTRON_ROOT}\n")
+
+    MEMORY_DIR = _NEUTRON_ROOT / "memory"
+    ARCHIVED_DIR = MEMORY_DIR / "archived"
+    COOKBOOKS_DIR = MEMORY_DIR / "cookbooks"
+    BACKUP_DIR = _NEUTRON_ROOT / ".backup"
+
+    deleted = []
+    errors = []
+    total_bytes = 0
+
+    def _delete(path: Path, reason: str) -> None:
+        nonlocal total_bytes
+        if args.dry_run:
+            size = path.stat().st_size if path.is_file() else 0
+            print(f"  [DRY RUN] Delete: {path.relative_to(_NEUTRON_ROOT)} ({_format_size(size)}) — {reason}")
+            return
+        try:
+            size = path.stat().st_size if path.is_file() else 0
+            if path.is_file():
+                path.unlink()
+            elif path.is_dir():
+                shutil.rmtree(path)
+            total_bytes += size
+            deleted.append(str(path.relative_to(_NEUTRON_ROOT)))
+            print(f"  ✅ Deleted: {path.relative_to(_NEUTRON_ROOT)} ({_format_size(size)})")
+        except Exception as e:
+            print(f"  ❌ Failed: {path.relative_to(_NEUTRON_ROOT)} — {e}")
+            errors.append(str(path))
+
+    def _format_size(size: int) -> str:
+        for unit in ["B", "KB", "MB", "GB"]:
+            if size < 1024:
+                return f"{size:.1f}{unit}"
+            size /= 1024
+        return f"{size:.1f}GB"
+
+    # 1. archived/ files beyond retention
+    if ARCHIVED_DIR.exists():
+        ret_days = args.retention if args.retention else 7
+        cutoff = datetime.now() - timedelta(days=ret_days)
+        count = len(list(ARCHIVED_DIR.iterdir()))
+        print(f"  📦 archived/: {count} files | retention: {ret_days} days")
+        for f in sorted(ARCHIVED_DIR.iterdir(), key=lambda x: x.stat().st_mtime):
+            try:
+                mtime = datetime.fromtimestamp(f.stat().st_mtime)
+                if mtime < cutoff:
+                    _delete(f, f"retention {ret_days} days")
+            except Exception:
+                pass
+
+    # 2. .backup/ old files
+    if BACKUP_DIR.exists():
+        bak_days = args.backup_days if args.backup_days else 30
+        cutoff = datetime.now() - timedelta(days=bak_days)
+        count = len(list(BACKUP_DIR.iterdir()))
+        print(f"  💾 .backup/: {count} files | retention: {bak_days} days")
+        for f in sorted(BACKUP_DIR.iterdir(), key=lambda x: x.stat().st_mtime):
+            try:
+                mtime = datetime.fromtimestamp(f.stat().st_mtime)
+                if mtime < cutoff:
+                    _delete(f, f"backup retention {bak_days} days")
+            except Exception:
+                pass
+
+    # 3. __pycache__ directories
+    if args.pycache:
+        print(f"  🐍 __pycache__ cleanup:")
+        for root_dir in [_NEUTRON_ROOT, COOKBOOKS_DIR]:
+            if not root_dir.exists():
+                continue
+            for pc in root_dir.rglob("__pycache__"):
+                _delete(pc, "__pycache__")
+            for pyc in root_dir.rglob("*.pyc"):
+                _delete(pyc, "*.pyc")
+
+    # 4. Test cache
+    if args.tests:
+        for pattern in ["tests/__pycache__", "tests/.pytest_cache", "*.pyc"]:
+            for f in _NEUTRON_ROOT.glob(pattern):
+                _delete(f, "test cache")
+
+    # 5. Large unused files
+    if args.large:
+        print(f"  📁 Large files (>{args.large}MB) not in git:")
+        for f in _NEUTRON_ROOT.rglob("*"):
+            if not f.is_file():
+                continue
+            try:
+                size_mb = f.stat().st_size / (1024 * 1024)
+                if size_mb > args.large:
+                    rel = f.relative_to(_NEUTRON_ROOT)
+                    if not any(p in str(rel) for p in [".git", "node_modules", "archived"]):
+                        _delete(f, f"large file ({size_mb:.0f}MB)")
+            except Exception:
+                pass
+
+    # 6. data_*.json files in archived/ (external dumps from tests/agents)
+    if args.data_json:
+        json_files = list(ARCHIVED_DIR.glob("data_*.json"))
+        count = len(json_files)
+        print(f"  🗑️  data_*.json in archived/: {count} files")
+        for f in json_files:
+            _delete(f, "data_*.json dump")
+
+    # 6b. Empty directories
+    if args.empty:
+        print("  📂 Empty directories:")
+        for d in _NEUTRON_ROOT.rglob("*"):
+            if d.is_dir() and not any(d.iterdir()):
+                try:
+                    d.rmdir()
+                    print(f"  ✅ Removed empty dir: {d.relative_to(_NEUTRON_ROOT)}")
+                except Exception:
+                    pass
+
+    print(f"\n{_bold('Summary')}")
+    print(f"  Deleted: {len(deleted)} items")
+    print(f"  Freed:   {_format_size(total_bytes)}")
+    if errors:
+        print(f"  Errors:  {len(errors)}")
+    if args.dry_run:
+        print(f"\n  ⚠️  DRY RUN — no files were actually deleted")
+    print()
+    return 0
+
+
 def cmd_protect(args: argparse.Namespace) -> int:
     """
     Run Upgrade Protection Protocol: backup protected files before upgrade.
@@ -684,6 +820,18 @@ Examples:
     # version
     p = sub.add_parser("version", help="Show version info")
     p.set_defaults(func=cmd_version)
+
+    # gc
+    p = sub.add_parser("gc", help="Garbage collection — clean up disk space")
+    p.add_argument("--dry-run", action="store_true", help="Show what would be deleted without deleting")
+    p.add_argument("--retention", type=int, default=7, help="archived/ retention in days (default: 7)")
+    p.add_argument("--backup-days", type=int, default=30, help=".backup/ retention in days (default: 30)")
+    p.add_argument("--pycache", action="store_true", help="Delete __pycache__ and *.pyc files")
+    p.add_argument("--tests", action="store_true", help="Delete test cache (__pycache__, .pytest_cache)")
+    p.add_argument("--large", type=float, metavar="MB", help="Delete files larger than N MB not in git")
+    p.add_argument("--empty", action="store_true", help="Remove empty directories")
+    p.add_argument("--data-json", action="store_true", help="Delete data_*.json files in archived/ (test/agent dumps)")
+    p.set_defaults(func=cmd_gc)
 
     # protect
     p = sub.add_parser("protect", help="Run Upgrade Protection Protocol — backup protected files before upgrade")
