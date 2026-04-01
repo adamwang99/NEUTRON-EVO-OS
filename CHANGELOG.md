@@ -4,6 +4,38 @@ All notable changes are documented here. The format follows [Keep a Changelog](h
 
 ---
 
+## [4.3.2] — 2026-04-01 — Garbage Collection + Session-Start Fix
+
+### New Features
+
+- **`neutron gc`** (`engine/cli/main.py`) — Garbage collection CLI command với nhiều flags:
+  - `--retention N` — archived/ retention in days (default: 7)
+  - `--backup-days N` — .backup/ retention in days (default: 30)
+  - `--pycache` — delete __pycache__ and *.pyc
+  - `--tests` — delete pytest cache
+  - `--large MB` — delete files larger than N MB
+  - `--empty` — remove empty directories
+  - `--data-json` — delete data_*.json dumps in archived/
+  - `--dry-run` — preview without deleting
+
+- **Session-start auto-GC** (`hooks/session-start.sh`) — GC chạy tự động mỗi khi Claude Code khởi động:
+  - archived/ logs > 7 ngày
+  - `__pycache__/`, `*.pyc`, `.pytest_cache`
+  - `data_*.json` dumps in archived/
+
+- **Session-start hook fix** — Eliminated `command_substitution` security prompt:
+  - Extracted inline Python heredoc → `hooks/neutron-first-run.py`
+  - Pre-approved permission trong Claude Code settings
+
+- **CLAUDE.md update** — Full quick reference với tất cả commands
+
+### Disk Usage
+
+- Cleaned 60K+ garbage files
+- Total disk: **481 MB → 252 MB (-48%)**
+
+---
+
 ## [4.3.1] — 2026-04-01 — Audit Fixes + UI Library + CLI Upgrade
 
 ### New Features
