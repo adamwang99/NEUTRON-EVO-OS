@@ -4,6 +4,46 @@ All notable changes are documented here. The format follows [Keep a Changelog](h
 
 ---
 
+## [4.4.0] — 2026-04-01 — Audit Fixes + Upgrade Protection
+
+### New Features
+
+- **Upgrade Protection Protocol** (`RULES.md`) — MANDATORY steps before any upgrade
+  (`git pull`, `pip install`, `install.sh`, etc.):
+  - Check `git status` first
+  - Backup protected files (`.env`, `memory/*.json`, `USER.md`) to `.backup/`
+  - Use `git checkout --ours` for local data files that git also tracks
+  - Verify `.gitignore` covers all data files
+  - Restore from `.backup/` if data is lost after upgrade
+
+### Bug Fixes
+
+- **CORS security** (`mcp_server/http_transport.py`) — `allow_credentials=True` với `allow_origins=["*"]` bị browser reject. Giờ dùng config `cors_origins`, credentials=False
+- **Multi-tenant race** (`http_transport.py`) — `os.environ["NEUTRON_ROOT"]` bị mutate per-request gây race condition. Giờ dùng `contextvars.ContextVar`
+- **Rating not saved** (`workflow/logic/__init__.py`) — `_step_ship()` không call `rating.record_shipment()` hay `add_rating()`. Giờ có rồi
+- **Learned skill invocation** (`skill_execution.py`) — sai import path (`skills.core.learned` vs `skills.learned.<slug>`). Giờ detect qua registry đúng
+- **Config data destruction** (`config.py`) — `_load()` overwrite file corrupted không backup. Giờ backup vào `.config_backup/` trước
+- **Session-start checkpoint path** (`session-start.sh`) — đọc `memory/.last_checkpoint.md` (file không tồn tại). Giờ đọc từ daily log
+- **Acceptance test auto-confirm** (`acceptance_test/logic/__init__.py`) — thiếu FIRST STEP check. Giờ check `should_skip("acceptance")` ngay đầu function
+- **Duplicate `_record_invocation()`** (`learned_skill_builder.py`) — dead code ở line 438. Đã xóa
+- **Rate limit bypass** (`http_transport.py`) — `/keys` endpoints không check rate-limit. Giờ check rồi
+- **UnicodeDecodeError unhandled** (`transport.py`) — invalid UTF-8 stdin crash. Giờ handle rồi
+- **Missing engine exports** (`engine/__init__.py`) — thiếu 5 modules trong `__all__`. Giờ export đủ
+- **Silent audit log failure** (`auto_confirm.py`) — `_log_auto_action()` silent pass on error. Giờ print stderr
+
+### Improvements
+
+- **`.gitignore`** — thêm `memory/shipments.json`, `memory/user_decisions.json`, `memory/.mcp_config.json`, `memory/.auto_confirm.json`, `memory/handoff*.md`, `.backup/` để không bao giờ commit user data
+- **CLI docstring** (`engine/cli/main.py`) — bỏ `neutron explore` không tồn tại, sửa typo
+- **Workflow SKILL.md** — thêm `/verify` vào step table
+- **`pretool-backup.sh`** — portable `NEUTRON_ROOT` thay vì hardcode path
+
+### Tests
+
+- **70/70 pass** (trước: 69/70) — `test_workflow_spec_returns_proper_status` giờ accept 3 states: `spec_written`, `awaiting_discovery`, `spec_approved`
+
+---
+
 ## [4.3.0] — 2026-04-01 — Phase 7 Complete
 
 ### New Features

@@ -2,6 +2,9 @@
 node_modules/
 yarn.lock
 
+# VS Code Extension build output (44MB - not needed in git)
+vscode-extension/node_modules/
+
 # Environment
 .env
 .env.local
@@ -31,3 +34,23 @@ context-export/
 
 # Claude Code local config
 .claude/
+
+# ─── NEUTRON EVO OS — Protected user data (NEVER commit) ───────────────────────
+
+# User data — always local only
+memory/shipments.json
+memory/user_decisions.json
+memory/.mcp_config.json
+memory/.auto_confirm.json
+memory/handoff*.md
+memory/rss*.json
+memory/feeds/
+memory/discoveries/
+
+# Local backups (upgrade protection)
+.backup/
+.backup/
+
+# NEUTRON local MCP config
+.mcp_config.json
+memory/.mcp_config.json

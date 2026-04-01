@@ -1,7 +1,7 @@
 """NEUTRON-EVO-OS Engine — Core Python components."""
 from __future__ import annotations
 
-__version__ = "4.3.0"
+__version__ = "4.4.0"
 __all__ = [
     "NEUTRON_ROOT",
     "MEMORY_DIR",

@@ -1,11 +1,75 @@
 # RULES.md - NEUTRON EVO OS Operating Rules
 
 > Governed by SOUL.md and MANIFESTO.md
-> Last Updated: 2026-03-30
+> Last Updated: 2026-04-01
 
 ---
 
 ## Part 1: Core Agent Rules
+
+### 🚨 UPGRADE PROTECTION PROTOCOL — MANDATORY
+
+**Triggered by any of:**
+- `git pull`, `git checkout`, `git merge`
+- `pip install`, `npm install`, `brew install`
+- Running any install script (`install.sh`, `install-*.sh`, `make install*`)
+- Upgrading packages or dependencies
+- **Any file modification that might overwrite system files**
+
+**BEFORE running upgrade, AI MUST:**
+
+```
+1. PROTECT USER DATA FILES — list all files that contain:
+   - API keys, tokens, secrets: .env, .env.local, memory/.mcp_config.json
+   - RSS/feed configs:         memory/rss*.json, memory/feeds/
+   - User preferences:          USER.md, USER_PREFERENCES.md
+   - Session data:              memory/*.json (not in gitignore)
+   - Checkpoints:               memory/handoff*.md
+   - Shipment records:          memory/shipments.json
+   - Decisions log:             memory/user_decisions.json
+
+2. VERIFY git status — check what files WILL be modified:
+   git status  ← MUST run before ANY upgrade command
+
+3. BACKUP everything in PROTECTED list to .backup/
+   cp .env .backup/.env.$(date +%Y%m%d%H%M%S)
+
+4. COMPARE with git — if file exists in both git AND local:
+   - Local has real data (not placeholder): KEEP local, skip git version
+   - Use: git checkout --ours <file>  to keep local
+
+5. VERIFY .gitignore — ensure ALL protected files are ignored:
+   .env .env.local memory/shipments.json memory/user_decisions.json
+   memory/.mcp_config.json memory/rss*.json memory/handoff*.md
+
+6. AFTER upgrade completes:
+   - Check git status again
+   - Verify all protected files still have correct content
+   - If any protected file was overwritten: RESTORE from .backup/
+```
+
+**FORBIDDEN during any upgrade:**
+- ❌ `git checkout --force` without checking protected files first
+- ❌ `git reset --hard` — wipes uncommitted local data
+- ❌ Overwriting `.env` without verifying it still has correct API keys
+- ❌ Deleting `memory/*.json` files
+- ❌ Modifying `memory/archived/` files
+- ❌ Running `git stash push` without `--include-untracked` AND verifying stash list
+- ❌ Any `git clean -f` without checking what will be deleted
+
+**IF data is lost during upgrade:**
+```
+1. STOP immediately — do not continue
+2. CHECK .backup/ directory for recent backups
+3. git reflog — find what commit caused the loss
+4. RESTORE from backup: cp .backup/.env.20260331* .env
+5. If backup also gone: check GitHub release tags for last known good state
+6. NEVER assume data is unrecoverable
+7. REPORT to user immediately with:
+   - What was lost
+   - What was backed up
+   - Recovery steps taken
+```
 
 ### Data Handling
 
@@ -175,6 +239,12 @@ Every skill execution updates PERFORMANCE_LEDGER.md:
 │   □ Check PERFORMANCE_LEDGER.md (CI audit)             │
 │   □ Verify: can I defend this output?                  │
 │                                                          │
+│ BEFORE ANY UPGRADE (git pull, install, pip, npm):       │
+│   □ git status ← check what will be modified           │
+│   □ Protect: .env, memory/*.json, USER.md              │
+│   □ Backup to .backup/ before upgrade                   │
+│   □ Verify .gitignore covers all data files             │
+│                                                          │
 │ WORKFLOW: /explore → /spec → /build → /verify → /ship  │
 │                                                          │
 │ FORBIDDEN:                                              │
@@ -183,9 +253,13 @@ Every skill execution updates PERFORMANCE_LEDGER.md:
 │   ✗ Hallucination                                       │
 │   ✗ Operate outside 5-step workflow                     │
 │   ✗ Execute skill with CI < 30                          │
+│   ✗ git reset --hard or git checkout --force during    │
+│     upgrade without checking protected files first        │
+│   ✗ Overwrite .env without verifying API keys intact    │
 │                                                          │
 │ STOP CONDITIONS:                                        │
 │   → Policy conflict, archive failure, data loss         │
 │   → Low confidence (< 0.7), hallucination detected     │
+│   → Upgrade would overwrite protected data files         │
 └──────────────────────────────────────────────────────────┘
 ```
