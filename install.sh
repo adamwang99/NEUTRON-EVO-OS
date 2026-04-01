@@ -185,8 +185,21 @@ MCPJSON
         ok ".mcp.json already exists"
     fi
 
-    # Add SessionStart hook (runs session-start.sh on every new Claude Code session)
-    HOOK_SCRIPT="$NEUTRON_ROOT_DIR/hooks/session-start.sh"
+    # ── Symlink ~/.neutron-evo-os ────────────────────────────────────────────
+    # This is the canonical location for ALL projects to reference
+    NEUTRON_LINK="$HOME/.neutron-evo-os"
+    if [ ! -e "$NEUTRON_LINK" ]; then
+        ln -s "$NEUTRON_ROOT_DIR" "$NEUTRON_LINK"
+        ok "~/.neutron-evo-os → $NEUTRON_ROOT_DIR"
+    elif [ -L "$NEUTRON_LINK" ] && [ "$(readlink "$NEUTRON_LINK")" != "$NEUTRON_ROOT_DIR" ]; then
+        warn "~/.neutron-evo-os points elsewhere: $(readlink "$NEUTRON_LINK")"
+    else
+        ok "~/.neutron-evo-os already linked"
+    fi
+
+    # ── SessionStart hook ─────────────────────────────────────────────────────
+    # Use canonical ~/.neutron-evo-os path (not hardcoded project path)
+    HOOK_SCRIPT="$NEUTRON_LINK/hooks/session-start.sh"
     chmod +x "$HOOK_SCRIPT" 2>/dev/null || true
     CLAUDE_SETTINGS="$HOME/.claude/settings.json"
     mkdir -p "$HOME/.claude"
@@ -240,30 +253,18 @@ if $MODE_FULL; then
     CLAUDE_SETTINGS="$CLAUDE_DIR/settings.json"
     mkdir -p "$CLAUDE_DIR"
 
-    # 1. Link ~/.neutron-evo-os to this repo
-    NEUTRON_HOME="$HOME/.neutron-evo-os"
-    if [ -L "$NEUTRON_HOME" ]; then
-        EXISTING=$(readlink "$NEUTRON_HOME")
-        if [ "$EXISTING" = "$NEUTRON_ROOT_DIR" ]; then
-            ok "~/.neutron-evo-os → $NEUTRON_ROOT_DIR"
-        else
-            warn "~/.neutron-evo-os already points elsewhere: $EXISTING"
-        fi
-    elif [ -d "$NEUTRON_HOME" ]; then
-        warn "$NEUTRON_HOME is a directory (not a symlink) — skipping"
-    else
-        ln -s "$NEUTRON_ROOT_DIR" "$NEUTRON_HOME"
-        ok "~/.neutron-evo-os → $NEUTRON_ROOT_DIR"
-    fi
+    # Canonical symlink is created in MODE_MCP above (reuse it)
+    NEUTRON_LINK="$HOME/.neutron-evo-os"
+    NEUTRON_HOME=$(readlink -f "$NEUTRON_LINK" 2>/dev/null || echo "$NEUTRON_ROOT_DIR")
 
-    # 2. Create ~/.claude/CLAUDE.md (global fallback)
-    cat > "$CLAUDE_DIR/CLAUDE.md" << EOF
+    # 1. ~/.claude/CLAUDE.md (global fallback) — use ~ for portability
+    cat > "$CLAUDE_DIR/CLAUDE.md" << 'EOF'
 # NEUTRON EVO OS — Global Context
 > ∫f(t)dt — Functional Credibility Over Institutional Inertia
 
 ## System
-- **Version**: 4.1.0
-- **NEUTRON_ROOT**: $NEUTRON_ROOT_DIR
+- **Version**: 4.2.0
+- **NEUTRON_ROOT**: ~/.neutron-evo-os
 - **Owner**: Adam Wang
 
 ## Workflow
@@ -284,29 +285,24 @@ Full files at: $NEUTRON_ROOT_DIR/
 EOF
     ok "~/.claude/CLAUDE.md created"
 
-    # 3. Setup SessionStart hook
+    # 3. Add NEUTRON_ROOT env to settings.json (use canonical path)
     if [ -f "$CLAUDE_SETTINGS" ]; then
-        # Only add hook if not present (preserve all existing settings!)
-        if ! grep -q "NEUTRON_ROOT\|NEUTRON-EVO" "$CLAUDE_SETTINGS" 2>/dev/null; then
-            # Add NEUTRON_ROOT env if missing
-            if ! grep -q "NEUTRON_ROOT" "$CLAUDE_SETTINGS" 2>/dev/null; then
-                if command -v jq &>/dev/null; then
-                    cp "$CLAUDE_SETTINGS" "$CLAUDE_SETTINGS.backup"
-                    jq --arg ROOT "$NEUTRON_ROOT_DIR" \
-                       '.env.NEUTRON_ROOT = $ROOT | .env.CLAUDE_CODE_NO_FLICKER //= "1"' \
-                       "$CLAUDE_SETTINGS" > "$CLAUDE_SETTINGS.tmp" && mv "$CLAUDE_SETTINGS.tmp" "$CLAUDE_SETTINGS"
-                    ok "Added NEUTRON_ROOT to settings.json (jq merge)"
-                else
-                    warn "jq not found — add NEUTRON_ROOT to ~/.claude/settings.json manually:"
-                    warn "  \"NEUTRON_ROOT\": \"$NEUTRON_ROOT_DIR\""
-                fi
-            fi
+        if ! grep -q "NEUTRON_ROOT" "$CLAUDE_SETTINGS" 2>/dev/null; then
+            # Use Python for safe JSON merge (no jq needed)
+            python3 - "$CLAUDE_SETTINGS" << 'PYEOF'
+import json, sys
+path = sys.argv[1]
+data = json.loads(open(path).read())
+data.setdefault("env", {})["NEUTRON_ROOT"] = "~/.neutron-evo-os"
+data.setdefault("env", {})["CLAUDE_CODE_NO_FLICKER"] = "1"
+open(path, "w").write(json.dumps(data, indent=2))
+print("OK: Added NEUTRON_ROOT to settings.json")
+PYEOF
         else
-            ok "settings.json already has NEUTRON context"
+            ok "settings.json already has NEUTRON_ROOT"
         fi
     else
-        # Create minimal settings
-        cat > "$CLAUDE_SETTINGS" << EOF
+        cat > "$CLAUDE_SETTINGS" << 'EOF'
 {
   "permissions": {
     "defaultMode": "acceptEdits",
@@ -314,7 +310,7 @@ EOF
   },
   "skipDangerousModePermissionPrompt": true,
   "env": {
-    "NEUTRON_ROOT": "$NEUTRON_ROOT_DIR",
+    "NEUTRON_ROOT": "~/.neutron-evo-os",
     "CLAUDE_CODE_NO_FLICKER": "1"
   }
 }
@@ -322,7 +318,7 @@ EOF
         ok "Created ~/.claude/settings.json"
     fi
 
-    # 4. Auto-apply to existing projects
+    # 4. Auto-apply to existing projects (use canonical symlink path)
     echo -e "\n${BOLD}─── Auto-apply to existing projects ───${RESET}"
     PROJECTS_DIR="$HOME/mnt/data/projects"
     if [ -d "$PROJECTS_DIR" ]; then
@@ -338,9 +334,9 @@ EOF
 
             echo -n "  → $name: "
             mkdir -p "$project_dir/memory/archived" 2>/dev/null || true
-            # Copy missing NEUTRON files
+            # Copy missing NEUTRON files (use symlink source)
             for f in SOUL.md MANIFESTO.md RULES.md PERFORMANCE_LEDGER.md START.md; do
-                [ -f "$NEUTRON_ROOT_DIR/$f" ] && [ ! -f "$project_dir/$f" ] && cp "$NEUTRON_ROOT_DIR/$f" "$project_dir/$f"
+                [ -f "$NEUTRON_HOME/$f" ] && [ ! -f "$project_dir/$f" ] && cp "$NEUTRON_HOME/$f" "$project_dir/$f"
             done
             echo -e "${OK}applied"
             APPLY=$((APPLY+1))

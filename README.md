@@ -1,6 +1,6 @@
 # 🧠 NEUTRON EVO OS
 
-![Banner](https://raw.githubusercontent.com/adamwang99/NEUTRON-EVO-OS/main/NEUTRON%20EVO%20OS.png)
+![NEUTRON EVO OS v4.2.0](1.png)
 
 > **∫f(t)dt** — *Functional Credibility Over Institutional Inertia*
 > Sovereign AI Agent Operating System v4.1.0
