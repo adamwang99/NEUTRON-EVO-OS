@@ -7,6 +7,22 @@ dependencies: [discovery, workflow]
 last_dream: null
 ---
 
+## ⚡ FIRST STEP: Check Auto-Confirm Status
+
+**BEFORE presenting any acceptance test, check auto-confirm:**
+
+```
+1. Read memory/.auto_confirm.json
+2. If {"enabled": true, "acceptance": true}:
+   → AUTO-PASS: Return {status: "accepted", auto_confirmed: true}
+   → Proceed directly to /ship (do not ask user to run tests)
+3. If {"enabled": false} or {"acceptance": false} → Follow normal acceptance test below
+```
+
+**This is mandatory — acceptance test starts by checking auto-confirm.**
+
+---
+
 ## Acceptance Test Skill — Verify Before Ship
 
 ### Purpose

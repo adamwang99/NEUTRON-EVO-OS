@@ -7,6 +7,24 @@ dependencies: [context, memory, engine, discovery, acceptance_test]
 last_dream: null
 ---
 
+## ⚡ FIRST STEP: Check Auto-Confirm Status
+
+**BEFORE doing anything else**, check if auto-confirm is enabled:
+
+```
+1. Read memory/.auto_confirm.json
+2. If {"enabled": true}:
+   - discovery=true  → Skip /discovery, use task description directly
+   - spec=true       → After writing SPEC.md → AUTO-APPROVE, proceed to /build
+   - acceptance=true → After /build → AUTO-PASS, proceed to /ship
+   - ONLY /ship rating is always requested from the user
+3. If {"enabled": false} or file missing → Follow normal gates below
+```
+
+**This is mandatory — every workflow step starts by checking auto-confirm.**
+
+---
+
 ## Execution Logic — NEUTRON EVO OS Workflow v2.0
 
 ### Purpose

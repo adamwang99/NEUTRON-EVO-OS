@@ -40,6 +40,24 @@ Quick reference:
            Exit: Checkpoint saved, memory logged, CI +5 to +15
 ```
 
+### ⚡ Auto-Confirm Gates
+
+**BEFORE presenting any gate, check auto-confirm status FIRST:**
+
+```
+STEP 1: Read memory/.auto_confirm.json
+STEP 2: If {"enabled": true} → skip the gate entirely
+STEP 3: Only present gate UI if auto-confirm is FALSE for that gate
+```
+
+| Gate | Auto-confirm = true | Auto-confirm = false |
+|------|---------------------|----------------------|
+| SPEC review | Proceed to /build immediately | Present USER REVIEW prompt |
+| Acceptance test | Proceed to /ship immediately | Present USER TEST prompt |
+| Discovery | Skip interview, use task as-is | Run 12-question interview |
+
+**Only /ship rating is ALWAYS requested** — even in auto mode.
+
 **Stop conditions:** Explicit `STOP_AND_ASK` triggers in RULES.md §Stop Conditions.
 Never skip STOP triggers for speed.
 

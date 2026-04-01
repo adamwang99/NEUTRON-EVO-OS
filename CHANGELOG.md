@@ -4,6 +4,31 @@ All notable changes are documented here. The format follows [Keep a Changelog](h
 
 ---
 
+## [4.2.0] — 2026-04-01 — Phase 6 Complete
+
+### New Features
+
+- **Full skill logic implementations** — All 5 core skills (context, memory, workflow, engine, checkpoint) now have complete `logic/__init__.py` and `validation/__init__.py`.
+- **MCP Server** (`mcp_server/`) — Complete stdio JSON-RPC 2.0 server exposing 10 MCP tools, 2 resources (`memory://today`, `ledger://ci`), and 6 workflow prompts. Ready to wire into Claude Code MCP.
+- **`neutron` CLI** — `neutron auto`, `neutron audit`, `neutron checkpoint`, `neutron memory`, `neutron log`, `neutron decisions`, `neutron route`, `neutron dream`.
+- **`make dream`** — Triggers Dream Cycle (archive + prune + distill).
+- **`make ci-audit`** — Full CI health check with skill-by-skill breakdown.
+- **Phase 7 foundation** — MCP server structure ready for authentication, HTTP transport, multi-project support.
+
+### Bug Fixes
+
+- **`distill_log()` false positive** — Removed `"|"` from keyword filter (matched all markdown table rows).
+- **`extension.ts triggerDream()`** — Wired to `make dream` in terminal (was previously no-op message box).
+
+### Verification
+
+- All 7 skills: `has_logic() = True` ✅
+- MCP server: stdio JSON-RPC responds correctly to `tools/list` ✅
+- `skill_execution.run()` pipeline: memory + workflow + engine all return valid `{status, ci_delta}` ✅
+- CI audit: `overall_ci = 50.0`, all 7 skills healthy ✅
+
+---
+
 ## [4.1.0] — 2026-03-30
 
 ### New Features

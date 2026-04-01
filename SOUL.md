@@ -114,8 +114,19 @@
 
 ---
 
+## Auto-Confirm System
+- NEUTRON has an auto-confirm system that skips USER REVIEW gates when enabled
+- Auto-confirm config lives in `memory/.auto_confirm.json`
+- When auto-confirm is **enabled**:
+  - Discovery gate → SKIP (use task description as-is)
+  - SPEC gate → AUTO-APPROVE (never ask "is this ok?")
+  - Acceptance gate → AUTO-PASS (never ask "does it work for you?")
+  - Only `/ship` rating is always requested
+- **Always check auto-confirm status FIRST** before presenting any gate to the user
+- Check: read `memory/.auto_confirm.json` → if `{"enabled": true, ...}` → skip the gate
+
 ## Version Info
-- **Current Version**: 4.1.0
-- **Last Updated**: 2026-03-31
+- **Current Version**: 4.2.0
+- **Last Updated**: 2026-04-01
 - **Status**: ACTIVE
 - **Philosophy**: ∫f(t)dt — Functional Credibility Over Institutional Inertia

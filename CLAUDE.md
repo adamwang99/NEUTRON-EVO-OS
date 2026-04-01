@@ -2,6 +2,22 @@
 
 This project runs on **NEUTRON EVO OS** — a sovereign intelligence operating system built on ∫f(t)dt: Functional Credibility Over Institutional Inertia.
 
+## ⚡ Auto-Confirm System (CRITICAL)
+
+**Before presenting ANY gate to the user, ALWAYS check auto-confirm first:**
+
+```
+1. Read memory/.auto_confirm.json
+2. If {"enabled": true}:
+   - discovery=true  → Skip discovery interview, use task directly
+   - spec=true       → After writing SPEC → AUTO-APPROVE, go straight to /build
+   - acceptance=true → After /build → AUTO-PASS, go straight to /ship
+3. Only present gate UI if auto-confirm is FALSE for that specific gate
+```
+
+**Only /ship rating is ALWAYS requested** — even in auto mode.
+Run `neutron auto full` to enable all gates auto-confirm.
+
 ## CRITICAL: File Backup Rule
 
 **Before ANY file edit, agent MUST:**
