@@ -27,20 +27,29 @@
 
 ## 🧠 Memory Retrieval (How AI Knows What Was Learned)
 
-Every new session automatically sees:
-1. `memory/LEARNED.md` — bug fixes & patterns from past sessions (shown by SessionStart hook)
+Every new session automatically sees via SessionStart hook:
+1. `memory/LEARNED.md` — bug fixes & patterns from past sessions
 2. `memory/cookbooks/*.md` — distilled knowledge from Dream Cycle (most recent shown)
 3. `memory/discoveries/` — past project discoveries
 4. `memory/YYYY-MM-DD.md` — today's session log
 5. Full reference: `WORKFLOW_MEMORY.md` (memory system workflow)
 
-**Before starting any fix, search LEARNED.md:**
-```bash
-grep -i "boundary\|observer\|gc\|hook" ~/.neutron-evo-os/memory/LEARNED.md
-```
+## 🗄️ 3-Tier Memory System
 
-**After fixing a bug, record it:**
-Add entry to `memory/LEARNED.md` using the template in that file (date, symptom, root cause, fix, tags).
+| Tier | Storage | When Auto-Pruned | Retention |
+|------|---------|------------------|-----------|
+| SHORT: Active log | `memory/YYYY-MM-DD.md` | Truncated to 500 lines if >10k lines | Live, never deleted |
+| MID: Cookbooks | `memory/cookbooks/*.md` | Never | Until overwritten by next distill |
+| LONG: Archived | `memory/archived/` | 7 days | Auto-deleted oldest |
+| LONG: LEARNED.md | `memory/LEARNED.md` | Never | Permanent institutional memory |
+| LONG: Discoveries | `memory/discoveries/` | Never | Permanent |
+
+**Dream Cycle trigger:** `neutron dream` or auto after 30min silence.
+
+**Search past bugs:**
+```bash
+grep -i "boundary\|observer\|gc\|hook" memory/LEARNED.md
+```
 
 Disk space is protected via `neutron gc`. GC runs automatically every session start (silent).
 Manual full cleanup when needed:

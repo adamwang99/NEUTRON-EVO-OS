@@ -62,33 +62,35 @@ def _observer_start(context: dict) -> dict:
     root_path = Path(root).resolve()
     neutron = _NEUTRON_ROOT.resolve()
 
-    # Same path — fine (using NEUTRON_ROOT as observer root is valid)
-    # Also reject if root resolves ABOVE NEUTRON_ROOT (e.g. /mnt/data/projects when
-    # NEUTRON_ROOT=/mnt/data/projects/myproject — would scan sibling projects)
-    if root_path != neutron:
-        try:
-            neutron.relative_to(root_path)      # root is above neutron → parent dir
-            return {
-                "status": "error",
-                "output": (
-                    f"Root '{root}' is a parent of NEUTRON_ROOT — rejecting to prevent "
-                    "observer from scanning sibling projects. Use the project root directly."
-                ),
-                "ci_delta": -3,
-            }
-        except ValueError:
-            pass  # neutron is NOT under root_path — might be valid or not a project
+    # Reject if root is ABOVE NEUTRON_ROOT (e.g. /mnt/data/projects when
+    # NEUTRON_ROOT=/mnt/data/projects/myproject — would scan sibling projects).
+    # Check: neutron must be at or below root in the directory tree.
+    try:
+        neutron.relative_to(root_path)
+    except ValueError:
+        pass  # neutron is NOT under root_path — fine, root is at or below neutron
+    else:
+        # neutron IS relative to root_path → root_path is a parent of neutron
+        # e.g. root=/projects, neutron=/projects/myproject
+        return {
+            "status": "error",
+            "output": (
+                f"Root '{root}' is a parent of NEUTRON_ROOT — rejecting to prevent "
+                "observer from scanning sibling projects. Use the project root directly."
+            ),
+            "ci_delta": -3,
+        }
 
-        # root is not above neutron — but verify it's a project root (has CLAUDE.md/.git)
-        if not (root_path / "CLAUDE.md").exists() and not (root_path / ".git").exists():
-            return {
-                "status": "error",
-                "output": (
-                    f"Invalid root '{root}': not a project root "
-                    "(no CLAUDE.md or .git found). Observer will NOT start."
-                ),
-                "ci_delta": -3,
-            }
+    # Verify it's a project root (has CLAUDE.md or .git)
+    if not (root_path / "CLAUDE.md").exists() and not (root_path / ".git").exists():
+        return {
+            "status": "error",
+            "output": (
+                f"Invalid root '{root}': not a project root "
+                "(no CLAUDE.md or .git found). Observer will NOT start."
+            ),
+            "ci_delta": -3,
+        }
 
     try:
         SilentObserver.start(str(root_path), dream_cycle, debounce_seconds=debounce)

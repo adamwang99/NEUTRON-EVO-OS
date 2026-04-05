@@ -5,12 +5,15 @@ Implements Pruning (delete noise) and Distillation (compress logs into Cookbooks
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 import shutil
 import threading
 from pathlib import Path
 from datetime import datetime, timedelta
+
+logger = logging.getLogger("neutron-evo-os")
 
 from engine.smart_observer import SilentObserver
 
@@ -61,30 +64,57 @@ def dream_cycle(json_output: bool = True) -> dict | str:
         # Remove sentinel AFTER work is done — observer can now safely trigger
         try:
             _DREAM_SENTINEL.unlink(missing_ok=True)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.error(f"Dream Cycle: failed to remove sentinel {_DREAM_SENTINEL} — {e}")
 
 
 def _dream_cycle_inner() -> dict:
-    """Inner dream cycle logic (called within re-entrancy guard)."""
+    """
+    Inner dream cycle logic (called within re-entrancy guard).
+
+    3-tier memory management:
+      SHORT  (active log): today's YYYY-MM-DD.md — kept live, never auto-deleted
+                            Only Dream Cycle compresses it after distillation
+      MID   (cookbooks):   distill_log() extracts patterns → cookbooks/
+                            Each day gets one cookbook with CI stats, errors, decisions
+      LONG  (archived):    Old YYYY-MM-DD.md copies → archived/ with 7-day retention
+                            Oldest beyond retention → deleted
+    """
     # Ensure dirs exist
     ARCHIVED_DIR.mkdir(exist_ok=True)
     COOKBOOKS_DIR.mkdir(exist_ok=True)
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     now = datetime.now()
+    today_str = now.strftime("%Y-%m-%d")
 
     # --- Archive Phase ---
-    # Only archive files at top level of memory/ — never subdirectories.
-    # Filter out subdirectory entries explicitly.
+    # Only archive .md logs OLDER than today — today's log stays live.
+    # Also archive logs that are oversized (>MAX_LINES_THRESHOLD lines).
+    MAX_LINES_THRESHOLD = 10_000
     archived_count = 0
     archived_files = []
     for log in MEMORY_DIR.iterdir():
         if not (log.is_file() and log.suffix == ".md"):
             continue
-        # Skip sentinel file
         if log.name.startswith(".dream_active"):
             continue
+        if log.name.startswith(today_str):
+            # Today's log — check if it's oversized
+            try:
+                line_count = sum(1 for _ in log.open())
+                if line_count > MAX_LINES_THRESHOLD:
+                    dest = ARCHIVED_DIR / f"{log.stem}_{timestamp}{log.suffix}"
+                    shutil.copy2(log, dest)
+                    archived_files.append(f"{log.name} ({line_count} lines — oversized)")
+                    archived_count += 1
+                    # Truncate to preserve last 500 lines
+                    lines = log.read_text().splitlines()
+                    log.write_text("\n".join(lines[-500:]) + "\n")
+                    archived_files.append(f"  → {log.name} truncated to 500 lines")
+            except Exception as e:
+                logger.warning(f"Dream Cycle: could not process oversized log {log}: {e}")
+            continue  # Don't archive today's log normally
         dest = ARCHIVED_DIR / f"{log.stem}_{timestamp}{log.suffix}"
         shutil.copy2(log, dest)
         archived_files.append(log.name)

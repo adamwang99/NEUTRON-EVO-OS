@@ -48,12 +48,11 @@ def check() -> bool:
                 return True  # ok, has entries
 
         print("WARNING: 'fix:' commit but LEARNED.md not modified or empty.")
-        print("  → Every bug fix should be recorded in memory/LEARNED.md")
+        print("  → Every bug fix MUST be recorded in memory/LEARNED.md")
         print("  → Add entry and run: git add memory/LEARNED.md && git commit --amend")
-        print("  → Or skip this warning if this is a very minor fix.")
-        # Return True (warning only, not a hard block for now)
-        # Change to sys.exit(1) to make it a hard requirement
-        return True
+        print("  → Or skip with: git commit --no-verify (but add LEARNED.md entry after)")
+        # HARD BLOCK — every bug fix must be recorded
+        sys.exit(1)
 
     return True
 

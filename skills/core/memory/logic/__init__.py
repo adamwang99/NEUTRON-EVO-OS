@@ -17,6 +17,7 @@ Does NOT replace MemoryOS — keeps both systems separate.
 """
 from __future__ import annotations
 
+import filelock
 import os
 import re
 import shutil
@@ -256,51 +257,74 @@ def _search_learned(path: Path, query: str) -> dict:
     }
 
 
+def _locked_read_write(path: Path, update_fn) -> dict:
+    """
+    Atomic read-modify-write using filelock + temp file.
+    update_fn(old_data) -> new_data (list/dict) or None to skip write.
+    Always returns dict with {"status": ..., "data": ...}.
+    """
+    import json as _json
+    lock_path = str(path.with_suffix(".lock"))
+    lock = filelock.FileLock(lock_path, timeout=10)
+    try:
+        with lock:
+            data = [] if not path.exists() else _json.loads(path.read_text())
+            result = update_fn(data)
+            if result is not None:
+                path.write_text(_json.dumps(result, indent=2))
+            return {"status": "ok", "data": result if result is not None else data}
+    except filelock.Timeout:
+        return {"status": "error", "output": f"Lock timeout on {path.name} — try again", "ci_delta": -3}
+    except _json.JSONDecodeError:
+        return {"status": "error", "output": f"Corrupted {path.name} — data archived, reset to empty", "ci_delta": -5}
+
+
 def _decision(task: str, context: dict) -> dict:
     """
     Record or list decisions in memory/user_decisions.json.
     Sub-actions via context["sub_action"]: "add", "list"
     Required for "add": context["decision"], context["context"]
+    Thread-safe: uses filelock + atomic write.
     """
     import json as _json
 
     decisions_path = MEMORY_DIR / "user_decisions.json"
-
     sub = context.get("sub_action", "list")
 
     if sub == "add":
-        decisions = []
-        if decisions_path.exists():
-            try:
-                decisions = _json.loads(decisions_path.read_text())
-            except Exception:
-                pass
+        new_id_ref = [0]  # mutable container for id
 
-        new_id = (max((d["id"] for d in decisions), default=0)) + 1
-        entry = {
-            "id": new_id,
-            "timestamp": datetime.now().isoformat(),
-            "decision": task or context.get("decision", ""),
-            "context": context.get("context", ""),
-            "outcome": "pending",
-        }
-        decisions.append(entry)
-        decisions_path.write_text(_json.dumps(decisions, indent=2))
-        return {"status": "added", "output": f"Decision #{new_id} recorded", "ci_delta": 3}
+        def add_entry(data):
+            new_id_ref[0] = max((d["id"] for d in data), default=0) + 1
+            entry = {
+                "id": new_id_ref[0],
+                "timestamp": datetime.now().isoformat(),
+                "decision": task or context.get("decision", ""),
+                "context": context.get("context", ""),
+                "outcome": "pending",
+            }
+            data.append(entry)
+            return data
+
+        result = _locked_read_write(decisions_path, add_entry)
+        if result.get("status") == "error":
+            return result
+        return {"status": "added", "output": f"Decision #{new_id_ref[0]} recorded", "ci_delta": 3}
 
     else:  # list
-        if not decisions_path.exists():
-            return {"status": "ok", "output": "No decisions recorded yet", "ci_delta": 0}
-        try:
-            decisions = _json.loads(decisions_path.read_text())
-        except Exception:
-            return {"status": "error", "output": "Corrupted decisions file", "ci_delta": -3}
-        pending = [d for d in decisions if d.get("outcome") == "pending"]
-        applied = [d for d in decisions if d.get("outcome") == "applied"]
+        def read_all(data):
+            return data  # return unmodified for list
+
+        result = _locked_read_write(decisions_path, read_all)
+        if result.get("status") == "error":
+            return result
+        data = result.get("data", [])
+        pending = [d for d in data if d.get("outcome") == "pending"]
+        applied = [d for d in data if d.get("outcome") == "applied"]
         return {
             "status": "ok",
-            "output": f"{len(decisions)} decision(s) — {len(pending)} pending, {len(applied)} applied",
-            "decisions": decisions[-10:],  # last 10
+            "output": f"{len(data)} decision(s) — {len(pending)} pending, {len(applied)} applied",
+            "decisions": data[-10:],
             "ci_delta": 0,
         }
 
@@ -310,47 +334,46 @@ def _shipment(task: str, context: dict) -> dict:
     Record or list shipments in memory/shipments.json.
     Sub-actions via context["sub_action"]: "add", "list"
     Required for "add": context["rating"] (1-5), context["steps_completed"]
+    Thread-safe: uses filelock + atomic write.
     """
     import json as _json
 
     shipments_path = MEMORY_DIR / "shipments.json"
-
     sub = context.get("sub_action", "list")
 
     if sub == "add":
-        shipments = []
-        if shipments_path.exists():
-            try:
-                shipments = _json.loads(shipments_path.read_text()).get("shipments", [])
-            except Exception:
-                pass
+        new_id_ref = [0]
 
-        new_id = (max((s["id"] for s in shipments), default=0)) + 1
-        entry = {
-            "id": new_id,
-            "timestamp": datetime.now().isoformat(),
-            "project": task,
-            "complexity": context.get("complexity", "MEDIUM"),
-            "steps_completed": context.get("steps_completed", []),
-            "time_to_ship_minutes": context.get("time_minutes", 0),
-            "outcome": "shipped",
-            "rating": context.get("rating"),
-            "rating_notes": context.get("notes", ""),
-            "rating_timestamp": datetime.now().isoformat(),
-        }
-        shipments.append(entry)
-        data = {"shipments": shipments, "counter": new_id}
-        shipments_path.write_text(_json.dumps(data, indent=2))
-        return {"status": "shipped", "output": f"Shipment #{new_id}: {task}", "ci_delta": 10}
+        def add_entry(data):
+            new_id_ref[0] = max((s["id"] for s in data), default=0) + 1
+            entry = {
+                "id": new_id_ref[0],
+                "timestamp": datetime.now().isoformat(),
+                "project": task,
+                "complexity": context.get("complexity", "MEDIUM"),
+                "steps_completed": context.get("steps_completed", []),
+                "time_to_ship_minutes": context.get("time_minutes", 0),
+                "outcome": "shipped",
+                "rating": context.get("rating"),
+                "rating_notes": context.get("notes", ""),
+                "rating_timestamp": datetime.now().isoformat(),
+            }
+            data.append(entry)
+            return data
+
+        result = _locked_read_write(shipments_path, add_entry)
+        if result.get("status") == "error":
+            return result
+        return {"status": "shipped", "output": f"Shipment #{new_id_ref[0]}: {task}", "ci_delta": 10}
 
     else:  # list
-        if not shipments_path.exists():
-            return {"status": "ok", "output": "No shipments recorded yet", "ci_delta": 0}
-        try:
-            data = _json.loads(shipments_path.read_text())
-            shipments = data.get("shipments", [])
-        except Exception:
-            return {"status": "error", "output": "Corrupted shipments file", "ci_delta": -3}
+        def read_all(data):
+            return data
+
+        result = _locked_read_write(shipments_path, read_all)
+        if result.get("status") == "error":
+            return result
+        shipments = result.get("data", [])
         rated = [s for s in shipments if s.get("rating")]
         avg = sum(s["rating"] for s in rated) / len(rated) if rated else 0
         return {
@@ -359,6 +382,6 @@ def _shipment(task: str, context: dict) -> dict:
                 f"{len(shipments)} shipment(s) — "
                 f"{len(rated)} rated — avg rating: {avg:.1f}/5"
             ),
-            "shipments": shipments[-10:],  # last 10
+            "shipments": shipments[-10:],
             "ci_delta": 0,
         }
