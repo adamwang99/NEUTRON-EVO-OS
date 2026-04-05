@@ -126,6 +126,25 @@ if [ -f "$LEARNED" ]; then
     fi
 fi
 
+# ── Load hub LEARNED.md (accumulated from all projects) ──────────────────────
+# NEUTRON_HUB points to ~/.neutron-evo-os — cross-project knowledge base.
+# Skip if hub is same as local (hub project itself has no separate hub).
+if [ -n "$NEUTRON_HUB" ] && [ -d "$NEUTRON_HUB/memory" ] && [ "$NEUTRON_HUB" != "$NEUTRON_ROOT" ]; then
+    HUB_LEARNED="$NEUTRON_HUB/memory/LEARNED.md"
+    if [ -f "$HUB_LEARNED" ]; then
+        HUB_TOTAL=$(grep -c "^## \[" "$HUB_LEARNED" 2>/dev/null || echo 0)
+        if [ "$HUB_TOTAL" -gt 0 ]; then
+            echo ""
+            echo "📡 HUB LEARNED.md — $HUB_TOTAL bug fix(es) from all projects"
+            # Show last 3 hub entries (most recent bugs from any project)
+            HUB_LAST=$(awk '/^## \[.*\] Bug: /{section=$0} section{body=section ORS $0} END{print body}' "$HUB_LEARNED" 2>/dev/null | tail -25)
+            if [ -n "$HUB_LAST" ]; then
+                echo "$HUB_LAST" | sed 's/^/   /'
+            fi
+        fi
+    fi
+fi
+
 # ── Load most recent cookbook (distilled knowledge from Dream Cycle) ───────
 COOKBOOK=$(find "$MEMORY_DIR/cookbooks" -name "*.md" -type f -printf "%T@ %p\n" 2>/dev/null | sort -rn | head -1 | cut -d' ' -f2-)
 if [ -n "$COOKBOOK" ] && [ -f "$COOKBOOK" ]; then

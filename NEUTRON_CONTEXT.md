@@ -68,6 +68,36 @@ neutron gc --empty                     # remove empty directories
 GC runs automatically on every Claude Code session start (silent, no output).
 Use `neutron gc --dry-run` to preview before running.
 
+## 🌐 Multi-Window Hub/Satellite Architecture
+
+When running multiple Claude Code windows (each in a different project), knowledge is shared via the **hub**:
+
+```
+~/.neutron-evo-os/         ← HUB (ai-context-master/ — central knowledge)
+├── memory/LEARNED.md       ← Accumulated bugs from ALL projects
+├── memory/decisions.json   ← Accumulated decisions from ALL projects
+└── memory/index.json       ← Registry: project → last sync time
+
+/mnt/data/projects/octa/   ← SATELLITE
+└── memory/YYYY-MM-DD.md   ← Local session log (project-specific)
+
+/mnt/data/projects/bot/    ← SATELLITE
+└── memory/YYYY-MM-DD.md   ← Local session log (project-specific)
+```
+
+**Knowledge flow:**
+1. Session ends in satellite project → `neutron memory sync` extracts bugs/decisions from local log
+2. Entries merged into hub `LEARNED.md` + `decisions.json` (deduplicated)
+3. Next session (any project) → `session-start.sh` reads hub LEARNED.md → sees accumulated learnings from all projects
+
+**Sync command:**
+```bash
+neutron memory sync                # push local learnings to hub
+neutron memory sync --hub /path    # override hub path
+```
+
+**NEUTRON_HUB** env var (set by launcher) = path to hub engine. **NEUTRON_ROOT** = current project.
+
 ## ⚡ Quick Reference
 
 | Task | Command |

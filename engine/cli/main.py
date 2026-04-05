@@ -413,6 +413,20 @@ def cmd_audit(args: argparse.Namespace) -> int:
 def cmd_memory(args: argparse.Namespace) -> int:
     """Memory operations."""
     action = args.action or "status"
+    # Sync: satellite projects (e.g. /mnt/data/projects/octa) lack skills/ directory.
+    # Load _sync_to_hub directly from hub path via importlib.
+    if action == "sync":
+        import importlib
+        import importlib.util
+        hub = Path(os.environ.get("NEUTRON_HUB", str(_NEUTRON_ROOT)))
+        spec = importlib.util.spec_from_file_location(
+            "_sync_mod", hub / "skills" / "core" / "memory" / "logic" / "__init__.py"
+        )
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        r = mod._sync_to_hub({"hub_root": args.hub or str(hub)})
+        print(_format_result(r))
+        return 0
     r = skill_execution.run("memory", args.task or "memory", {
         "action": action,
         "query": args.query,
@@ -835,7 +849,8 @@ Examples:
 
     # memory
     p = sub.add_parser("memory", help="Memory operations")
-    p.add_argument("action", nargs="?", choices=["log", "archive", "search", "dream", "status"], default="status")
+    p.add_argument("action", nargs="?", choices=["log", "archive", "search", "dream", "status", "sync"], default="status")
+    p.add_argument("--hub", dest="hub", help="Hub root path (for sync action)")
     p.add_argument("task", nargs="?", help="Task for log action")
     p.add_argument("--query", dest="query", help="Search query")
     p.add_argument("--file", dest="file_path", help="File to archive")
