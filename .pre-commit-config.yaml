@@ -1,0 +1,53 @@
+# NEUTRON EVO OS — Pre-commit hooks
+# Installs: pip install pre-commit && pre-commit install
+# Runs automatically before every git commit.
+
+repos:
+  - repo: local
+    hooks:
+      - id: pytest
+        name: Run tests (must pass)
+        entry: python3 -m pytest tests/ -q
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [pre-commit]
+        fail_fast: true
+
+      - id: no-credentials
+        name: Check no credentials in commits
+        entry: python3 .pre-commit/check-credentials.py
+        language: system
+        pass_filenames: true
+        stages: [pre-commit]
+
+      - id: LEARNED-check
+        name: Check bug fix has LEARNED.md entry
+        entry: python3 .pre-commit/check-learned-entry.py
+        language: system
+        pass_filenames: true
+        stages: [pre-commit]
+        types: [python]
+
+      - id: no-pycache
+        name: No __pycache__ or .pyc files
+        entry: bash -c 'for f in "$@"; do case "$f" in __pycache__|*__pycache__|*.pyc) echo "ERROR: $f is a __pycache__ or .pyc file"; exit 1; esac; done'
+        language: system
+        pass_filenames: true
+        stages: [pre-commit]
+
+      - id: json-valid
+        name: JSON files must be valid
+        entry: python3 -c "import json,sys; json.load(open(sys.argv[1]))"
+        language: system
+        pass_filenames: true
+        types: [json]
+        stages: [pre-commit]
+
+      - id: gitignore-valid
+        name: .gitignore must be valid
+        entry: bash -c 'python3 -c "import re,sys; gitignore=open(\".gitignore\").read(); print(\"OK\")" 2>&1'
+        language: system
+        pass_filenames: false
+        files: ^\.gitignore$
+        stages: [pre-commit]
