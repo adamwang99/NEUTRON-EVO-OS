@@ -19,6 +19,7 @@
 | memory/cookbooks/ | Distilled knowledge | ✅ |
 | memory/LEARNED.md | Bug fixes & pattern database | ✅ |
 | memory/discoveries/ | Project discovery sessions | ✅ |
+| WORKFLOW_MEMORY.md | Memory system workflow | ✅ |
 | skills/core/ | Skill architecture | ✅ |
 | engine/ | Core engine | ✅ |
 | COORDINATION.md | Multi-Agent Workflow | ✅ |
@@ -37,7 +38,8 @@ TRƯỚC KHI LÀM GÌ CŨNG PHẢI ĐỌC:
 5. WORKFLOW.md          → Task distribution & parallel processing
 6. MANIFESTO.md         → ∫f(t)dt philosophy
 7. MEMORY.md            → Long-term knowledge
-8. memory/LEARNED.md    → Past bugs fixed, patterns to avoid ← NEW SESSIONS READ THIS
+8. WORKFLOW_MEMORY.md  → Memory system workflow (how to record & retrieve learnings)
+9. memory/LEARNED.md  → Past bugs fixed, patterns to avoid ← ALWAYS READ BEFORE FIXING
 9. memory/YYYY-MM-DD.md → Today's context
 ```
 

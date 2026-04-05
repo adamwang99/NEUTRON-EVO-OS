@@ -21,6 +21,7 @@ See `NEUTRON_CONTEXT.md` for the full system context. Additional docs:
 - `AI_CONTEXT_MASTER.md` — Project overview
 - `ARCHITECTURE.md` — System architecture
 - `MEMORY.md` — Project knowledge base
+- `WORKFLOW_MEMORY.md` — Memory system: how to record & retrieve learnings
 - `memory/LEARNED.md` — **Bug fixes & patterns: read before starting any fix**
 - `engine/` — NEUTRON CLI engine implementation
 - `mcp_server/` — MCP server (stdio, SSE, HTTP, WebSocket)
