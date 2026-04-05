@@ -1,7 +1,7 @@
 ---
 name: orchestration
 type: core
-version: 1.0.0
+version: 2.0.0
 CI: 50
 dependencies: [workflow, context, memory]
 last_dream: null
@@ -27,10 +27,41 @@ How do I make sure they don't conflict? How do I merge their outputs?"
 ```
 run_orchestration(task, {"phase": "analyze"})   → Decompose task, score parallelism
 run_orchestration(task, {"phase": "plan"})     → Present plan (after analyze)
-run_orchestration(task, {"phase": "execute"})  → Generate agent task scripts (you run them)
+run_orchestration(task, {"phase": "execute"})  → Build Agent configs, you call Agent tool
+run_orchestration(task, {"phase": "update", "unit_id": "...", "result": {...}})  → Record agent result
 run_orchestration(task, {"phase": "merge"})    → Validate + merge results
 run_orchestration(task, {"phase": "report"})    → Final summary
 ```
+
+### Execute Phase — Real Agent Spawning
+
+The `execute` phase returns a list of `Agent(...)` configs. You must call them:
+
+```python
+# After run_orchestration(..., phase="execute"):
+configs = result["agent_configs"]  # list of agent configs
+
+# Call Agent() for EACH config concurrently:
+for cfg in configs:
+    Agent(
+        prompt=cfg["prompt"],
+        agent=cfg["agent"],        # "Plan" | "Explore" | "general-purpose"
+        background=cfg["background"],  # True = concurrent, False = blocking
+        maxTurns=cfg["max_turns"],
+        isolation=cfg["isolation"],   # project root path → git worktree isolation
+        skills=cfg["skills"],         # ["spec", "context"] preloaded
+    )
+
+# When ALL agents finish, call:
+run_orchestration(task, {"phase": "merge"})
+```
+
+**Background vs Foreground:**
+- `background=True`: Agent runs concurrently while you continue. Long units (>20 min).
+- `background=False`: Agent blocks until done. Short units, or when sequential is fine.
+
+**Git worktree isolation**: `isolation="..."` runs the agent in a temporary worktree,
+auto-cleaned if no changes. All units can safely touch the same file paths.
 
 ---
 
@@ -200,37 +231,49 @@ Present unified results:
 
 ## How Orchestration Works vs Claude Code's `/batch`
 
-**This skill is a PLANNING tool** — it decomposes work, prevents conflicts,
-and generates task scripts. It does NOT spawn subagents directly.
+**Orchestration handles two scenarios:**
 
-**To execute the plan**, use Claude Code's bundled `/batch` skill:
-```
-1. orchestration(phase='analyze')  → Get unit decomposition
-2. orchestration(phase='plan')       → Review the plan, confirm structure
-3. /batch <instruction>             → Claude Code spawns parallel git worktrees
-4. orchestration(phase='merge')     → Validate and merge outputs
-```
+### Scenario A: Orchestration Skill → Agent Tool (v2+)
 
-**Orchestration generates task scripts** that you pass to `/batch`:
+Orchestration builds `Agent(...)` configs and stores them in state.
+The orchestrating AI calls them directly:
+
 ```
-UNIT-1: Build auth service
-  Agent: Plan | Files: auth/
-  → Task: "Implement JWT auth in auth/..."
-UNIT-2: Build API routes
-  Agent: Plan | Files: routes/
-  → Task: "Implement REST API in routes/..."
+1. run_orchestration(phase='analyze')   → Decompose task
+2. run_orchestration(phase='plan')       → Review plan, confirm
+3. run_orchestration(phase='execute')    → Build Agent configs
+4. Agent(...) for each config            ← REAL agents spawn via Agent tool
+5. run_orchestration(phase='merge')      → Validate and merge
 ```
 
-Run `/batch` with each unit's task in sequence or parallel
-(git worktree isolation prevents file conflicts).
+### Scenario B: Orchestration → /batch (git worktree parallel)
+
+Orchestration handles decomposition + conflict prevention;
+Claude Code's `/batch` skill handles parallel execution via git worktrees:
+
+```
+1. run_orchestration(phase='analyze')  → Get unit decomposition
+2. run_orchestration(phase='plan')      → Review the plan, confirm structure
+3. /batch <instruction>                 → Claude Code spawns parallel git worktrees
+4. run_orchestration(phase='merge')     → Validate and merge outputs
+```
 
 ---
 
-## ⚠️ Current Limitation
+## Agent Tool Parameters
 
-The `execute` phase generates task descriptions but does NOT spawn agents.
-You must run `/batch <task>` manually after `plan` phase.
-This is a known limitation — the skill focuses on decomposition correctness.
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `prompt` | string | Full task description for the agent |
+| `agent` | string | "Explore" (read-only), "Plan" (read+write), "general-purpose" |
+| `background` | bool | True = concurrent; False = blocking |
+| `maxTurns` | int | Max turns before stopping (default 50) |
+| `isolation` | string | Project root → runs in temporary git worktree |
+| `skills` | list[str] | Skills to preload ("spec", "context") |
+
+**`isolation: worktree`** — recommended for all units. The agent works on an
+isolated git branch. If no changes made, the worktree is auto-cleaned.
+This is the safest way to prevent file conflicts between parallel agents.
 
 ---
 

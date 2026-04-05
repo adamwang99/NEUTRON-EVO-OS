@@ -242,6 +242,105 @@ def _present_plan(task: str, units: list[dict], complexity: dict) -> str:
     return "\n".join(lines)
 
 
+# ─── Agent Config Builder ───────────────────────────────────────────────────────
+
+def _repr_long(s: str, indent: int = 0) -> str:
+    """Format a long string as a Python triple-quoted string literal for display."""
+    # Escape triple quotes inside content
+    safe = s.replace('"""', '\\"\\"\\"')
+    prefix = " " * indent
+    return f'"""\n{prefix}{safe}\n{prefix}"""'
+
+
+def _build_agent_config(unit: dict, task: str, spec_content: str,
+                         project_root: Path, isolation: bool = True) -> dict:
+    """
+    Build a structured Agent tool config for a unit.
+
+    Returns a dict that the orchestrating AI calls as:
+        Agent(
+            prompt=cfg["prompt"],
+            agent=cfg["agent"],
+            background=cfg["background"],
+            maxTurns=cfg["maxTurns"],
+            isolation=cfg.get("isolation"),
+            skills=cfg.get("skills"),
+        )
+    """
+    agent_type = unit.get("agent", "general-purpose").lower()
+    # Map friendly names to agent types
+    type_map = {
+        "plan": "Plan",
+        "explore": "Explore",
+        "general-purpose": "general-purpose",
+        "general purpose": "general-purpose",
+    }
+    agent_key = type_map.get(agent_type, "general-purpose")
+
+    # Determine execution mode
+    # Long-running units (>20min) → background; short units → foreground
+    est_min = unit.get("estimated_minutes", 15)
+    background = est_min > 20
+
+    # Build the agent prompt — rich context so subagent can work independently
+    lines = [
+        f"You are implementing UNIT-{unit['id']}: {unit['name']}.",
+        f"Scope: {unit['scope']}",
+        f"Files you own: {unit.get('files_hint', 'src/')}",
+        f"Deliverables: {unit['deliverables']}",
+        "",
+        "## Your task",
+        task,
+        "",
+    ]
+
+    if spec_content:
+        lines.extend([
+            "## Project SPEC (read before implementing)",
+            spec_content[:3000],  # Limit to avoid token overflow
+            "",
+        ])
+
+    # Conflict prevention instructions
+    lines.extend([
+        "## Rules (STRICT — never violate)",
+        "1. Only touch files in your declared scope.",
+        f"   Your scope: {unit.get('files_hint', 'src/')}",
+        "2. Never create or modify files owned by other units.",
+        "3. If you need a file from another unit's scope, request it via the main agent.",
+        "4. After implementation: run `python3 -m pytest tests/ -x -q` if tests exist.",
+        "5. Output a summary of: files created/modified, test results, any issues.",
+        "",
+        "## Output format when done:",
+        "```",
+        "UNIT_DONE",
+        "unit_id: UNIT-N",
+        "files_created: ...",
+        "files_modified: ...",
+        "tests: pass|fail|skipped",
+        "issues: ...",
+        "```",
+    ])
+
+    prompt = "\n".join(lines)
+
+    # Skill preloads — give agents NEUTRON context so they understand the project
+    skills = ["spec", "context"]
+
+    return {
+        "unit_id": unit["id"],
+        "unit_name": unit["name"],
+        "agent": agent_key,          # "Plan" | "Explore" | "general-purpose"
+        "prompt": prompt,
+        "background": background,
+        "max_turns": 100 if background else 50,
+        "isolation": str(project_root) if isolation else None,
+        "skills": skills,
+        "estimated_minutes": est_min,
+        "scope": unit.get("files_hint", ""),
+    }
+
+
 # ─── Main Entry Point ──────────────────────────────────────────────────────────
 
 def run_orchestration(task: str, context: dict = None) -> dict:
@@ -326,66 +425,107 @@ def run_orchestration(task: str, context: dict = None) -> dict:
             "ci_delta": 0,
         }
 
-    # ── EXECUTE: Spawn agents ─────────────────────────────────────────────────
+    # ── EXECUTE: Spawn agents via Agent tool ──────────────────────────────────
     elif phase == "execute":
         units = state.get("units", [])
-        task = state.get("task", task)
-        discovery = state.get("discovery_content", "")
+        task_text = state.get("task", task)
         spec_path = _NEUTRON_ROOT / "SPEC.md"
         spec_content = spec_path.read_text() if spec_path.exists() else ""
 
-        # Generate agent tasks for each unit
-        agent_tasks = []
+        # Build structured agent configs for each unit
+        agent_configs = []
         for u in units:
-            task_text = f"""Implement the following unit for the project:
+            cfg = _build_agent_config(
+                unit=u,
+                task=task_text,
+                spec_content=spec_content,
+                project_root=_NEUTRON_ROOT,
+                isolation=True,
+            )
+            agent_configs.append(cfg)
+            # Mark unit as running
+            u["status"] = "running"
 
-PROJECT TASK: {task}
-
-UNIT: {u['id']} — {u['name']}
-Scope: {u['scope']}
-Files to create/modify: {u['files_hint']}
-Deliverables: {u['deliverables']}
-
-Rules:
-1. Read the SPEC.md in the project root first
-2. Only implement what is in SPEC.md
-3. Never touch files owned by other units
-4. After implementation, report what files you created/modified
-5. Run tests if applicable before finishing
-
-Output format:
-```
-DONE:
-- [file created/modified]
-...
-
-TESTS: [pass/fail]
-NOTES: [any observations]
-```
-"""
-            agent_tasks.append({
-                "unit_id": u["id"],
-                "agent": u["agent"],
-                "task": task_text,
-                "scope": u["scope"],
-            })
-
-        state["phase"] = "merge"
-        state["agent_tasks"] = agent_tasks
+        state["phase"] = "execute"
+        state["agent_configs"] = agent_configs
+        state["units"] = units
+        state["started_at"] = datetime.now().isoformat()
         _save_state(state)
 
+        # ── Build agent tool invocation block ───────────────────────────────
+        # Each cfg can be called as: Agent(prompt=cfg["prompt"], agent=cfg["agent"], ...)
+        tool_calls = []
+        for cfg in agent_configs:
+            bg = cfg["background"]
+            mode = "background (concurrent)" if bg else "foreground (blocking)"
+            tool_calls.append(
+                f"\n# ══ {cfg['unit_id']}: {cfg['unit_name']} ═════════════════════════"
+                f"\n# Mode: {mode} | Est: ~{cfg['estimated_minutes']} min | Scope: {cfg['scope']}"
+                f"\n# Skills preloaded: {', '.join(cfg['skills'])}"
+                f"\nAgent("
+                f"\n    prompt={_repr_long(cfg['prompt'], indent=8)},"
+                f"\n    agent=\"{cfg['agent']}\","
+                f"\n    background={bg},"
+                f"\n    maxTurns={cfg['max_turns']},"
+                f"\n    isolation=\"{cfg['isolation']}\","
+                f"\n    skills={cfg['skills']},"
+                f"\n)"
+            )
+
+        tool_block = "\n".join(tool_calls)
+
         return {
-            "status": "agents_spawned",
+            "status": "ready_to_spawn",
             "output": (
-                f"🔄 {len(agent_tasks)} agents spawned for parallel execution.\n\n"
-                "Each agent is implementing its assigned unit.\n"
-                "Progress will be tracked and reported here.\n\n"
-                "After agents complete, call:\n"
-                "  run_orchestration(task, {'phase': 'merge'})\n"
+                f"🔄 {len(agent_configs)} agent configs built — SPAWNING NOW.\n\n"
+                f"Launch {len(agent_configs)} agents in parallel:\n"
+                f"{tool_block}\n\n"
+                "HOW TO SPAWN:\n"
+                "  - For each Agent(...) above: copy the config and call it\n"
+                "  - Background agents: set background=True → they run concurrently\n"
+                "  - Foreground agents: set background=False → block until done\n"
+                "  - After ALL agents finish: call run_orchestration(task, {'phase': 'merge'})\n\n"
+                "PROGRESS TRACKING:\n"
+                "  - Call run_orchestration(task, {'phase': 'update', 'unit_id': 'UNIT-1', 'result': <result>})\n"
+                "  - After last agent completes → merge phase\n"
             ),
-            "agent_tasks": agent_tasks,
-            "unit_count": len(agent_tasks),
+            "agent_configs": agent_configs,
+            "unit_count": len(agent_configs),
+            "tool_block": tool_block,
+            "spawn_instructions": {
+                "step": "Call Agent() for each config above with the exact parameters shown",
+                "wait_for": "ALL agents to complete",
+                "then": "run_orchestration(task, {'phase': 'merge'})",
+            },
             "next_phase": "merge",
+            "ci_delta": 0,
+        }
+
+    # ── UPDATE: Record agent completion ──────────────────────────────────────
+    elif phase == "update":
+        unit_id = context.get("unit_id", "")
+        result = context.get("result", {})
+        units = state.get("units", [])
+
+        for u in units:
+            if u["id"] == unit_id:
+                u["status"] = result.get("status", "done")
+                u["result"] = result
+                break
+
+        # Check if all done
+        running = [u for u in units if u.get("status") == "running"]
+        state["units"] = units
+        _save_state(state)
+
+        if not running:
+            # All agents finished — auto-advance to merge
+            return run_orchestration(task, {"phase": "merge"})
+
+        return {
+            "status": "unit_updated",
+            "unit_id": unit_id,
+            "remaining": len(running),
             "ci_delta": 0,
         }
 
@@ -393,6 +533,13 @@ NOTES: [any observations]
     elif phase == "merge":
         units = state.get("units", [])
         task = state.get("task", task)
+        agent_results = state.get("agent_results", {})
+
+        # Collect agent results from units (populated by update phase)
+        agent_results = {}
+        for u in units:
+            if "result" in u:
+                agent_results[u["id"]] = u["result"]
 
         # Check for file conflicts
         conflicts = _detect_conflicts(units)
@@ -401,7 +548,22 @@ NOTES: [any observations]
         state["phase"] = "report"
         state["conflicts"] = conflicts
         state["integration"] = integration_result
+        state["agent_results"] = agent_results
         _save_state(state)
+
+        # Build merge summary from agent results
+        merge_lines = []
+        done_count = 0
+        for u in units:
+            res = u.get("result", {})
+            status = u.get("status", "?")
+            if status in ("done", "UNIT_DONE"):
+                done_count += 1
+            files = res.get("files_created", []) + res.get("files_modified", [])
+            merge_lines.append(
+                f"  {u['id']}: {u['name']} → {status.upper()}"
+                + (f" | Files: {', '.join(files) if files else 'none'}" if files else "")
+            )
 
         conflict_note = ""
         if conflicts:
@@ -412,12 +574,15 @@ NOTES: [any observations]
         return {
             "status": "merge_complete",
             "output": (
-                f"✅ Merge complete.{conflict_note}\n"
+                f"✅ Merge complete — {done_count}/{len(units)} units done.{conflict_note}\n"
                 f"Integration: {integration_result['status']}\n"
+                f"Agent results: {len(agent_results)} recorded\n"
                 "Calling run_orchestration with phase='report' for final summary..."
             ),
             "conflicts": conflicts,
             "integration": integration_result,
+            "agent_results": agent_results,
+            "merge_summary": merge_lines,
             "next_phase": "report",
             "ci_delta": 5 if not conflicts else 2,
         }
