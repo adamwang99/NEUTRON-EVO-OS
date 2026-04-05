@@ -528,29 +528,48 @@ def _sync_to_hub(context: dict) -> dict:
 
     def _update_index(entries_count: int, decisions_count: int) -> bool:
         idx = []
-        if hub_index.exists():
-            try:
-                idx = _json.loads(hub_index.read_text())
-            except Exception:
-                idx = []
-        now = datetime.now().isoformat()
-        updated = False
-        for entry in idx:
-            if entry.get("project") == project_name:
-                entry["last_sync"] = now
-                entry["entries_synced"] = entries_count
-                entry["decisions_synced"] = decisions_count
-                updated = True
-        if not updated:
-            idx.append({
-                "project": project_name,
-                "local_root": str(local_path),
-                "last_sync": now,
-                "entries_synced": entries_count,
-                "decisions_synced": decisions_count,
-            })
-        hub_index.write_text(_json.dumps(idx, indent=2))
+        lock_path = str(hub_index.with_suffix(".lock"))
+        lock = filelock.FileLock(lock_path, timeout=10)
+        with lock:
+            if hub_index.exists():
+                try:
+                    idx = _json.loads(hub_index.read_text())
+                except Exception:
+                    idx = []
+            now = datetime.now().isoformat()
+            updated = False
+            for entry in idx:
+                if entry.get("project") == project_name:
+                    entry["last_sync"] = now
+                    entry["entries_synced"] = entries_count
+                    entry["decisions_synced"] = decisions_count
+                    updated = True
+            if not updated:
+                idx.append({
+                    "project": project_name,
+                    "local_root": str(local_path),
+                    "last_sync": now,
+                    "entries_synced": entries_count,
+                    "decisions_synced": decisions_count,
+                })
+            hub_index.write_text(_json.dumps(idx, indent=2))
         return True
+
+    def _append_decisions(decs: list[dict]) -> int:
+        if not decs:
+            return 0
+        entries = [
+            {
+                "id": 0,
+                "timestamp": datetime.now().isoformat(),
+                "decision": d.get("decision", ""),
+                "context": f"Synced from {project_name}",
+                "outcome": d.get("outcome", "applied"),
+                "_synced_from": project_name,
+            }
+            for d in decs[:20]
+        ]
+        return _safe_json_write(hub_decisions, entries)
 
     entries_count = _append_structured_learned(structured_entries)
     decisions_count = _append_decisions(synced_decisions)
