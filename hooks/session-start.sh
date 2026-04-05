@@ -68,8 +68,9 @@ fi
 
 # ── Garbage Collection (every session — silent) ─────────────────────────────
 # Runs lightweight cleanup silently. Full gc: neutron gc --pycache --tests
-# Uses lock file to prevent concurrent gc if multiple sessions start
-if [ ! -f "$GC_LOCK" ]; then
+# Uses lock file to prevent concurrent gc if multiple sessions start.
+# Guard: NEUTRON_ROOT must point to a valid NEUTRON installation.
+if [ ! -f "$GC_LOCK" ] && [ -f "$NEUTRON_ROOT/engine/cli/main.py" ]; then
     touch "$GC_LOCK"
     (
         # 1. archived/ daily log archives — delete files older than 7 days

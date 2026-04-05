@@ -124,8 +124,9 @@ def _dream_cycle_inner() -> dict:
             distilled.append(result["cookbook"])
 
     # --- Stop observer during dream cycle (avoid re-trigger) ---
+    # Pass NEUTRON_ROOT so stop() only affects THIS project, not sibling observers
     try:
-        SilentObserver.stop()
+        SilentObserver.stop(str(NEUTRON_ROOT))
     except Exception:
         pass
 

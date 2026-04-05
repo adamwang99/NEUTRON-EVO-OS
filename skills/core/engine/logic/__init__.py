@@ -58,9 +58,41 @@ def _observer_start(context: dict) -> dict:
     root = context.get("root", str(_NEUTRON_ROOT))
     debounce = context.get("debounce_seconds", 30)
 
+    # ── Boundary validation: reject parent dirs that contain other projects ──
+    root_path = Path(root).resolve()
+    neutron = _NEUTRON_ROOT.resolve()
+
+    # Same path — fine (using NEUTRON_ROOT as observer root is valid)
+    # Also reject if root resolves ABOVE NEUTRON_ROOT (e.g. /mnt/data/projects when
+    # NEUTRON_ROOT=/mnt/data/projects/myproject — would scan sibling projects)
+    if root_path != neutron:
+        try:
+            neutron.relative_to(root_path)      # root is above neutron → parent dir
+            return {
+                "status": "error",
+                "output": (
+                    f"Root '{root}' is a parent of NEUTRON_ROOT — rejecting to prevent "
+                    "observer from scanning sibling projects. Use the project root directly."
+                ),
+                "ci_delta": -3,
+            }
+        except ValueError:
+            pass  # neutron is NOT under root_path — might be valid or not a project
+
+        # root is not above neutron — but verify it's a project root (has CLAUDE.md/.git)
+        if not (root_path / "CLAUDE.md").exists() and not (root_path / ".git").exists():
+            return {
+                "status": "error",
+                "output": (
+                    f"Invalid root '{root}': not a project root "
+                    "(no CLAUDE.md or .git found). Observer will NOT start."
+                ),
+                "ci_delta": -3,
+            }
+
     try:
-        SilentObserver.start(root, dream_cycle, debounce_seconds=debounce)
-        return {"status": "started", "output": f"Observer running on {root}", "ci_delta": 2}
+        SilentObserver.start(str(root_path), dream_cycle, debounce_seconds=debounce)
+        return {"status": "started", "output": f"Observer running on {root_path}", "ci_delta": 2}
     except Exception as e:
         return {"status": "error", "output": f"Observer start failed: {e}", "ci_delta": -3}
 

@@ -87,14 +87,18 @@ def start_observer(
 class SilentObserver:
     """
     Non-blocking observer runner for use in background threads.
-    Start with: SilentObserver.start() — returns immediately.
-    Stop with: SilentObserver.stop().
+    Start with: SilentObserver.start(root_path, callback) — returns immediately.
+    Stop with:  SilentObserver.stop(root_path)           — only stops matching root.
+
+    Scope-safe: stop() requires the exact root_path that was used to start.
+    Calling stop() from project A will NOT affect an observer started by project B.
     """
 
     _lock = threading.Lock()
     _thread: Optional[threading.Thread] = None
     _observer: Optional["Observer"] = None
     _running = False
+    _root: Optional[str] = None   # track which root this observer watches
 
     @classmethod
     def start(
@@ -119,6 +123,7 @@ class SilentObserver:
                     with cls._lock:
                         cls._observer = observer
                         cls._running = True
+                        cls._root = root_path
                     observer.start()
                     logger.info(f"[NEUTRON-EVO-OS] Observer started on {root_path}")
                     while True:
@@ -131,6 +136,7 @@ class SilentObserver:
                 finally:
                     with cls._lock:
                         cls._running = False
+                        cls._root = None
                         if cls._observer:
                             try:
                                 cls._observer.stop()
@@ -142,10 +148,24 @@ class SilentObserver:
             cls._thread.start()
 
     @classmethod
-    def stop(cls):
-        """Stop the observer gracefully. Thread-safe."""
+    def stop(cls, root: str = None):
+        """
+        Stop the observer gracefully. Thread-safe and scope-safe.
+
+        Args:
+            root: If provided, only stops the observer if it was started on this exact
+                  root path. Prevents stopping observers belonging to sibling projects.
+                  If None, stops any running observer (legacy compatibility).
+        """
         with cls._lock:
             if not cls._running:
+                return
+            # Scope guard: reject stopping if a different root is running
+            if root is not None and cls._root is not None and cls._root != root:
+                logger.warning(
+                    f"[NEUTRON-EVO-OS] Refused stop(): observer is watching '{cls._root}', "
+                    f"not '{root}'. Use the same root to stop."
+                )
                 return
             cls._running = False
             obs = cls._observer
@@ -158,4 +178,5 @@ class SilentObserver:
         with cls._lock:
             cls._thread = None
             cls._observer = None
+            cls._root = None
         logger.info("[NEUTRON-EVO-OS] Observer stopped")

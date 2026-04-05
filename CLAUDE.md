@@ -33,6 +33,10 @@ See `NEUTRON_CONTEXT.md` for the full system context. Additional docs:
 - Auto-confirm gates controlled by `memory/.auto_confirm.json`
 - Hooks run automatically on session start
 
+## Known Issues & Guards
+
+- **Directory boundary**: Observer (`SilentObserver`) and GC are scoped to the active project root. Root path validation rejects parent directories and non-project paths to prevent scanning sibling projects. `stop()` requires the exact root that was used to start.
+
 ## Forbidden
 
 - Never commit sensitive files (.env, credentials.json)
