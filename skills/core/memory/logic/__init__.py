@@ -30,7 +30,7 @@ from datetime import datetime
 # Levels: logic/__init__.py → memory/ → core/ → skills/ → repo root
 _NEUTRON_ROOT = Path(os.environ.get(
     "NEUTRON_ROOT",
-    str(Path(__file__).parent.parent.parent.parent.parent)
+    str(Path(__file__).parent.parent.parent.parent)
 ))
 MEMORY_DIR = _NEUTRON_ROOT / "memory"
 ARCHIVED_DIR = MEMORY_DIR / "archived"

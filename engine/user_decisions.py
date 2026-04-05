@@ -56,18 +56,28 @@ def record(
 
     Returns: {status, decision_id, entry}
     """
-    decisions = _load()
-    entry = {
-        "id": len(decisions) + 1,
-        "timestamp": datetime.now().isoformat(),
-        "decision": decision,
-        "context": context,
-        "project": project,
-        "outcome": outcome,
-    }
-    decisions.append(entry)
-    _save(decisions)
-    return {"status": "recorded", "decision_id": entry["id"], "entry": entry}
+    lock = filelock.FileLock(str(DECISIONS_FILE.with_suffix(".lock")), timeout=10)
+    try:
+        lock.acquire(timeout=10)
+    except filelock.Timeout:
+        return {"status": "error", "output": "Lock timeout — try again", "ci_delta": -1}
+    try:
+        decisions = _load()
+        # Assign ID inside the lock: len() is safe since we hold the lock
+        new_id = max((d.get("id", 0) for d in decisions), default=0) + 1
+        entry = {
+            "id": new_id,
+            "timestamp": datetime.now().isoformat(),
+            "decision": decision,
+            "context": context,
+            "project": project,
+            "outcome": outcome,
+        }
+        decisions.append(entry)
+        atomic_write(DECISIONS_FILE, json.dumps(decisions, indent=2, ensure_ascii=False))
+        return {"status": "recorded", "decision_id": entry["id"], "entry": entry}
+    finally:
+        lock.release()
 
 
 def get_recent(n: int = 10, project: str = "") -> list:
@@ -88,16 +98,24 @@ def update_outcome(decision_id: int, outcome: str, notes: str = "") -> dict:
     Update the outcome of a decision.
     outcome: pending | accepted | rejected | modified
     """
-    decisions = _load()
-    for d in decisions:
-        if d.get("id") == decision_id:
-            d["outcome"] = outcome
-            d["outcome_updated_at"] = datetime.now().isoformat()
-            if notes:
-                d["outcome_notes"] = notes
-            _save(decisions)
-            return {"status": "updated", "entry": d}
-    return {"status": "error", "message": f"Decision {decision_id} not found"}
+    lock = filelock.FileLock(str(DECISIONS_FILE.with_suffix(".lock")), timeout=10)
+    try:
+        lock.acquire(timeout=10)
+    except filelock.Timeout:
+        return {"status": "error", "output": "Lock timeout — try again", "ci_delta": -1}
+    try:
+        decisions = _load()
+        for d in decisions:
+            if d.get("id") == decision_id:
+                d["outcome"] = outcome
+                d["outcome_updated_at"] = datetime.now().isoformat()
+                if notes:
+                    d["outcome_notes"] = notes
+                atomic_write(DECISIONS_FILE, json.dumps(decisions, indent=2, ensure_ascii=False))
+                return {"status": "updated", "entry": d}
+        return {"status": "error", "message": f"Decision {decision_id} not found"}
+    finally:
+        lock.release()
 
 
 def summarize() -> dict:

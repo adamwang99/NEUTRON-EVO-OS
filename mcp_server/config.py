@@ -58,7 +58,7 @@ def _default_config() -> dict:
         "server": {
             "port": 3100,
             "host": "127.0.0.1",
-            "cors_origins": ["*"],
+            "cors_origins": ["http://localhost:3000", "http://localhost:5173", "http://localhost:8080"],
             "request_timeout": 30,
         },
     }

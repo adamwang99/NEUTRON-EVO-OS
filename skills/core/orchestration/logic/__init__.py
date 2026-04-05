@@ -21,7 +21,7 @@ from typing import Optional
 # Resolve NEUTRON_ROOT
 _NEUTRON_ROOT = Path(os.environ.get(
     "NEUTRON_ROOT",
-    str(Path(__file__).parent.parent.parent.parent.parent)
+    str(Path(__file__).parent.parent.parent.parent)
 ))
 MEMORY_DIR = _NEUTRON_ROOT / "memory"
 _STATE_FILE = MEMORY_DIR / ".orchestration_state.json"

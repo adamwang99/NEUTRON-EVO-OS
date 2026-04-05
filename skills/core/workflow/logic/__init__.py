@@ -48,7 +48,7 @@ def _auto_record(step: str) -> dict:
 # Levels: logic/__init__.py → workflow/ → core/ → skills/ → repo root
 _NEUTRON_ROOT = Path(os.environ.get(
     "NEUTRON_ROOT",
-    str(Path(__file__).parent.parent.parent.parent.parent)
+    str(Path(__file__).parent.parent.parent.parent)
 ))
 MEMORY_DIR = _NEUTRON_ROOT / "memory"
 _GATE_FILE = MEMORY_DIR / ".workflow_gate.json"

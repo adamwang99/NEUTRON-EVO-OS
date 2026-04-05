@@ -76,12 +76,11 @@ def create_app() -> FastAPI:
     # ── Ready check ───────────────────────────────────────────────────────────
     @app.get("/ready")
     async def ready():
-        """Readiness probe — checks NEUTRON_ROOT is valid."""
+        """Readiness probe — checks NEUTRON_ROOT is valid. No internal paths leaked."""
         root = os.environ.get("NEUTRON_ROOT", "")
         engine_exists = Path(root, "engine").exists()
         return {
             "status": "ok" if engine_exists else "degraded",
-            "neutron_root": root,
             "engine_found": engine_exists,
         }
 
@@ -137,14 +136,15 @@ def create_app() -> FastAPI:
                 content={"jsonrpc": "2.0", "id": body.get("id"), "error": {"code": -32603, "message": err}},
             )
 
-        # Set per-request NEUTRON_ROOT via contextvar (thread/async-safe, no race)
+        # Set per-request NEUTRON_ROOT via contextvar only — NOT os.environ.
+        # ContextVar is copied per async task, so each concurrent request is isolated.
+        # os.environ is shared globally — mutating it causes tenant data leaks.
         if api_key != "_anonymous":
             resolved_root = auth.resolve_neutron_root(api_key)
             if resolved_root:
                 _current_neutron_root.set(resolved_root)
-                # Also set env var so that any downstream code that reads
-                # os.environ["NEUTRON_ROOT"] still works correctly
-                os.environ["NEUTRON_ROOT"] = resolved_root
+                # NOTE: We deliberately do NOT set os.environ["NEUTRON_ROOT"] here.
+                # Downstream code should call get_current_neutron_root() instead.
 
         # Handle JSON-RPC request
         from mcp_server import transport as _transport_mod
@@ -179,11 +179,18 @@ def create_app() -> FastAPI:
                 content=[{"jsonrpc": "2.0", "id": None, "error": {"code": -32603, "message": err}}],
             )
 
+        # Set per-request NEUTRON_ROOT via ContextVar only — no os.environ mutation
         if api_key != "_anonymous":
             resolved_root = auth.resolve_neutron_root(api_key)
             if resolved_root:
                 _current_neutron_root.set(resolved_root)
-                os.environ["NEUTRON_ROOT"] = resolved_root
+
+        # Batch size limit: prevent DoS via 100K-item batches
+        if len(body) > 100:
+            raise HTTPException(
+                status_code=413,
+                detail="Batch too large: maximum 100 requests per batch",
+            )
 
         from mcp_server import transport as _transport_mod
         results = []

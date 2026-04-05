@@ -16,16 +16,20 @@ Workflow gate:  memory/.workflow_gate.json (written on approve)
 """
 from __future__ import annotations
 
+import filelock
 import json
 import os
 import re
+import tempfile
 from pathlib import Path
 from datetime import datetime
+
+from engine._atomic import atomic_write
 
 # Resolve NEUTRON_ROOT from environment or this file's location
 _NEUTRON_ROOT = Path(os.environ.get(
     "NEUTRON_ROOT",
-    str(Path(__file__).parent.parent.parent.parent.parent)
+    str(Path(__file__).parent.parent.parent.parent)
 ))
 MEMORY_DIR = _NEUTRON_ROOT / "memory"
 _STATE_FILE = MEMORY_DIR / ".spec_debate_state.json"
@@ -45,9 +49,14 @@ def _load_workflow_gate() -> dict:
 
 
 def _save_workflow_gate(state: dict) -> None:
-    """Save workflow gate state — mirrors workflow skill's _save_gate()."""
+    """Save workflow gate state atomically with filelock."""
     MEMORY_DIR.mkdir(exist_ok=True)
-    _WORKFLOW_GATE_FILE.write_text(json.dumps(state, indent=2))
+    lock = filelock.FileLock(str(_WORKFLOW_GATE_FILE.with_suffix(".lock")), timeout=10)
+    try:
+        with lock:
+            atomic_write(_WORKFLOW_GATE_FILE, json.dumps(state, indent=2))
+    except filelock.Timeout:
+        raise RuntimeError("Lock timeout on workflow gate")
 
 
 # ─── State Management ──────────────────────────────────────────────────────────
@@ -62,13 +71,21 @@ def _load_state() -> dict:
 
 
 def _save_state(state: dict) -> None:
+    """Save SPEC debate state atomically with filelock."""
     MEMORY_DIR.mkdir(exist_ok=True)
-    _STATE_FILE.write_text(json.dumps(state, indent=2))
+    lock = filelock.FileLock(str(_STATE_FILE.with_suffix(".lock")), timeout=10)
+    try:
+        with lock:
+            atomic_write(_STATE_FILE, json.dumps(state, indent=2))
+    except filelock.Timeout:
+        raise RuntimeError("Lock timeout on SPEC debate state")
 
 
 def _clear_state() -> None:
-    if _STATE_FILE.exists():
-        _STATE_FILE.unlink()
+    try:
+        _STATE_FILE.unlink(missing_ok=True)
+    except OSError:
+        pass
 
 
 # ─── Discovery Output Loader ──────────────────────────────────────────────────
@@ -79,7 +96,7 @@ def _load_discovery_output() -> dict | None:
         list(_NEUTRON_ROOT.glob("DISCOVERY.md"))
         + list(MEMORY_DIR.rglob("DISCOVERY.md"))
     )
-    for p in sorted(candidates, key=lambda f: f.stat().st_mtime, reverse=True):
+    for p in sorted(candidates, key=lambda f: (f.stat().st_mtime, str(f)), reverse=True):
         try:
             content = p.read_text()
             # Verify it's a real discovery (has structured fields)
@@ -120,7 +137,9 @@ def _check_learned_warnings(task: str, discovery_content: str) -> list[dict]:
     current_title = ""
 
     for line in lines:
-        if line.startswith("## [") and ("Bug:" in line or "Bug:" in line):
+        if line.startswith("## [") and any(
+            tag in line for tag in ["Bug:", "Issue:", "Gotcha:", "Pitfall:", "Fix:", "Lesson:"]
+        ):
             # Process previous block
             if current_block and current_title:
                 block_text = "\n".join(current_block).lower()
@@ -836,7 +855,7 @@ def run_spec_skill(task: str, context: dict = None) -> dict:
             }
 
         discovery = _load_discovery_output()
-        discovery_content = discovery["content"] if discovery else ""
+        discovery_content = (discovery or {}).get("content", "")
         warnings = _check_learned_warnings(task, discovery_content)
 
         # Round 1 questions
@@ -977,9 +996,9 @@ def run_spec_skill(task: str, context: dict = None) -> dict:
             ui_library_result=ui_result,
         )
 
-        # Write SPEC.md
+        # Write SPEC.md (atomic: temp file + fsync + rename)
         spec_path = _NEUTRON_ROOT / "SPEC.md"
-        spec_path.write_text(spec_content)
+        atomic_write(spec_path, spec_content)
         state["spec_written"] = True
         state["spec_path"] = str(spec_path.relative_to(_NEUTRON_ROOT))
         _save_state(state)
@@ -1085,7 +1104,7 @@ def run_spec_skill(task: str, context: dict = None) -> dict:
             )
 
         spec_path = _NEUTRON_ROOT / "SPEC.md"
-        spec_path.write_text(spec_content)
+        atomic_write(spec_path, spec_content)
         state["spec_written"] = True
         state["spec_path"] = str(spec_path.relative_to(_NEUTRON_ROOT))
         _save_state(state)

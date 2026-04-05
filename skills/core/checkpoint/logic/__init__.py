@@ -22,7 +22,7 @@ from pathlib import Path
 # Levels: logic/__init__.py → checkpoint/ → core/ → skills/ → repo root
 _NEUTRON_ROOT = Path(os.environ.get(
     "NEUTRON_ROOT",
-    str(Path(__file__).parent.parent.parent.parent.parent)
+    str(Path(__file__).parent.parent.parent.parent)
 ))
 CHECKPOINT_CLI = _NEUTRON_ROOT / "engine" / "checkpoint_cli.py"
 

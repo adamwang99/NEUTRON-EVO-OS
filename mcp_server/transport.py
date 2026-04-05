@@ -38,7 +38,14 @@ def handle_request(req: dict) -> dict | None:
 
     method = req.get("method", "")
     req_id = req.get("id")
-    params = req.get("params", {})
+    params = req.get("params") or {}
+
+    if not isinstance(params, dict):
+        return {
+            "jsonrpc": "2.0",
+            "id": req_id,
+            "error": {"code": -32602, "message": f"Invalid params type: {type(params).__name__}, expected object"},
+        }
 
     if method == "initialize":
         return {

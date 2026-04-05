@@ -11,7 +11,7 @@ import re
 # Levels: logic/__init__.py → ui_library/ → core/ → skills/ → repo root
 _NEUTRON_ROOT = Path(os.environ.get(
     "NEUTRON_ROOT",
-    str(Path(__file__).parent.parent.parent.parent.parent)
+    str(Path(__file__).parent.parent.parent.parent)
 ))
 _LIB_DATA_FILE = Path(__file__).parent.parent / "ui_libraries.json"
 
@@ -60,7 +60,7 @@ def _score_library(lib: dict, project_type: str, tech_stack: str, requirements: 
 
     # Landing / marketing
     if any(kw in combined for kw in ["landing", "marketing", "hero", "portfolio"]):
-        if lib["name"] in ("Magic UI", "DaisyUI", "shadcn/ui"):
+        if lib.get("name") in ("Magic UI", "DaisyUI", "shadcn/ui"):
             score += 15
 
     # Enterprise / dashboard / data-heavy
@@ -80,7 +80,7 @@ def _score_library(lib: dict, project_type: str, tech_stack: str, requirements: 
 
     # Customizable / tùy biến
     if any(kw in req_lower for kw in ["customize", "tùy biến", "control", "modify", "edit source"]):
-        if lib["customizability", ""].startswith("HIGH"):
+        if str(lib.get("customizability", "")).startswith("HIGH"):
             score += 15
 
     # Form-heavy / full-featured
@@ -172,7 +172,7 @@ def route_ui_library(project_type: str, tech_stack: str, requirements: str = "")
             f"📚 Docs: {top_lib.get('docs', 'N/A')}\n"
             f"📊 Components: {top_lib.get('components_count', 'N/A')}\n\n"
             f"**Alternatives:**\n" +
-            "\n".join(f"- {l['name']} ({l.get('style', '')})" for l in alternatives[:3])
+            "\n".join(f"- {l.get('name', '?')} ({l.get('style', '')})" for l in alternatives[:3])
         ),
         "recommended": top_lib,
         "alternatives": alternatives[:3],
