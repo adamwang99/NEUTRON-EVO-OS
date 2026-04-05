@@ -489,49 +489,103 @@ NOTES: [any observations]
 
 
 def _detect_conflicts(units: list[dict]) -> list[dict]:
-    """Detect file ownership conflicts between units."""
+    """
+    Detect file ownership conflicts between units.
+
+    A conflict exists when TWO units both claim the same file or directory
+    (not just the same top-level directory name).
+    """
     conflicts = []
-    file_map: dict[str, str] = {}
+    # path_key -> (unit_id, full_hint)
+    # path_key = normalized path with "/" separator (not just first segment)
+    ownership: dict[str, tuple[str, str]] = {}
 
     for u in units:
+        unit_id = u["id"]
         for hint in u.get("files_hint", "").split(","):
-            path = hint.strip().split("/")[0]
-            if path and path != "":
-                if path in file_map and file_map[path] != u["id"]:
-                    conflicts.append({
-                        "file": path,
-                        "units": [file_map[path], u["id"]],
-                        "description": f"File/directory '{path}' claimed by both {file_map[path]} and {u['id']}",
-                        "resolution": f"Let {file_map[path]} own '{path}', {u['id']} imports from it",
-                    })
-                else:
-                    file_map[path] = u["id"]
+            hint = hint.strip()
+            if not hint:
+                continue
+            # Normalize: "src/components" → "src/components"
+            # "src/components/" → "src/components"
+            key = hint.rstrip("/")
+            if key in ownership and ownership[key][0] != unit_id:
+                owner_unit = ownership[key][0]
+                conflicts.append({
+                    "file": key,
+                    "units": [owner_unit, unit_id],
+                    "description": f"Path '{key}' claimed by both {owner_unit} and {unit_id}",
+                    "resolution": (
+                        f"Let {owner_unit} own '{key}'. "
+                        f"{unit_id} imports from it — no direct file modification."
+                    ),
+                })
+            else:
+                ownership[key] = (unit_id, hint)
 
     return conflicts
 
 
 def _run_integration_check(units: list[dict], task: str) -> dict:
-    """Run integration checks across all units."""
+    """
+    Run integration checks across all units.
+
+    Checks actual file existence in the declared paths, not just directory-level globs.
+    Returns conservative status: "skipped" if no files were created by units.
+    """
     # Check if SPEC.md still exists (meaningful build happened)
     spec_path = _NEUTRON_ROOT / "SPEC.md"
     if not spec_path.exists():
         return {"status": "skipped", "reason": "No SPEC.md found"}
 
-    # Check for basic file existence
-    total_files = 0
-    for u in units:
-        hint = u.get("files_hint", "")
-        for part in hint.split(","):
-            path = part.strip()
-            if path:
-                matches = list(_NEUTRON_ROOT.rglob(f"{path.split('/')[0]}/*"))
-                total_files += len(matches)
+    # Check for actual files in unit paths
+    paths_checked = set()
+    files_found = 0
+    units_with_files = 0
 
-    if total_files == 0:
-        return {"status": "no_files", "reason": "No output files found from units"}
+    for u in units:
+        unit_id = u["id"]
+        hint = u.get("files_hint", "")
+        has_files = False
+        for part in hint.split(","):
+            part = part.strip()
+            if not part:
+                continue
+            if part in paths_checked:
+                continue
+            paths_checked.add(part)
+
+            # Check if this path exists and contains files
+            base = part.rstrip("/").split("/")[0]  # top-level dir
+            resolved = _NEUTRON_ROOT / base
+            if resolved.exists() and resolved.is_dir():
+                # Count actual files (not directories) in this path
+                try:
+                    file_count = sum(
+                        1 for f in resolved.rglob("*")
+                        if f.is_file() and not f.name.startswith(".")
+                    )
+                    if file_count > 0:
+                        files_found += file_count
+                        has_files = True
+                except PermissionError:
+                    pass
+
+        if has_files:
+            units_with_files += 1
+
+    if files_found == 0:
+        return {
+            "status": "no_files",
+            "reason": f"No output files found in declared unit paths. Units may not have executed.",
+            "units_with_files": units_with_files,
+            "total_units": len(units),
+        }
 
     return {
         "status": "passed",
-        "files_created": total_files,
-        "units_completed": len(units),
+        "files_found": files_found,
+        "units_with_files": units_with_files,
+        "total_units": len(units),
+        "note": "Count is based on declared paths — actual unit attribution requires post-build scan",
     }

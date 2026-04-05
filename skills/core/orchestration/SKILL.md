@@ -20,17 +20,16 @@ How do I make sure they don't conflict? How do I merge their outputs?"
 
 ---
 
-## 🚨 CRITICAL — Auto-Confirm Enforcement
+---
 
-**STEP 1:** Read `memory/.auto_confirm.json`
+## How to Run
 
-**Decision tree:**
 ```
-IF file NOT exists → run normal orchestration
-IF {"enabled": true} AND {"orchestration": true}:
-    ✅ Run orchestration without asking — spawn agents after presenting plan
-IF {"enabled": false}:
-    → Show plan → ask for confirmation → spawn
+run_orchestration(task, {"phase": "analyze"})   → Decompose task, score parallelism
+run_orchestration(task, {"phase": "plan"})     → Present plan (after analyze)
+run_orchestration(task, {"phase": "execute"})  → Generate agent task scripts (you run them)
+run_orchestration(task, {"phase": "merge"})    → Validate + merge results
+run_orchestration(task, {"phase": "report"})    → Final summary
 ```
 
 ---
@@ -199,19 +198,39 @@ Present unified results:
 
 ---
 
-## Integration with Claude Code Bundled Skills
+## How Orchestration Works vs Claude Code's `/batch`
 
-**Use `/batch` for file-modification tasks:**
-- `/batch migrate src/ from X to Y` — parallel file changes with git worktree
-- `/batch refactor components/` — parallel refactoring across components
-- This skill handles the DECISION-MAKING layer; `/batch` handles execution
+**This skill is a PLANNING tool** — it decomposes work, prevents conflicts,
+and generates task scripts. It does NOT spawn subagents directly.
 
-**Orchestration runs BEFORE `/batch`:**
+**To execute the plan**, use Claude Code's bundled `/batch` skill:
 ```
-1. orchestration → decompose task, define units, plan merge
-2. /batch → spawn parallel agents per unit (if file modification)
-3. orchestration → validate, merge, report
+1. orchestration(phase='analyze')  → Get unit decomposition
+2. orchestration(phase='plan')       → Review the plan, confirm structure
+3. /batch <instruction>             → Claude Code spawns parallel git worktrees
+4. orchestration(phase='merge')     → Validate and merge outputs
 ```
+
+**Orchestration generates task scripts** that you pass to `/batch`:
+```
+UNIT-1: Build auth service
+  Agent: Plan | Files: auth/
+  → Task: "Implement JWT auth in auth/..."
+UNIT-2: Build API routes
+  Agent: Plan | Files: routes/
+  → Task: "Implement REST API in routes/..."
+```
+
+Run `/batch` with each unit's task in sequence or parallel
+(git worktree isolation prevents file conflicts).
+
+---
+
+## ⚠️ Current Limitation
+
+The `execute` phase generates task descriptions but does NOT spawn agents.
+You must run `/batch <task>` manually after `plan` phase.
+This is a known limitation — the skill focuses on decomposition correctness.
 
 ---
 

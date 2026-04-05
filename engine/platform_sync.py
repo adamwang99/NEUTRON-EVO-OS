@@ -31,6 +31,8 @@ from pathlib import Path
 from datetime import datetime
 from typing import Optional
 
+from engine._atomic import atomic_write
+
 # ─── Constants ────────────────────────────────────────────────────────────────
 
 HOME = Path.home()
@@ -53,16 +55,13 @@ def _read_json(path: Path) -> Optional[dict]:
 
 
 def _write_json(path: Path, data: dict, indent: int = 2) -> None:
-    """Write JSON file safely with backup."""
-    # Backup first
+    """Write JSON file safely: backup first, then atomic write (fsync+rename)."""
+    # Backup first (keeps last-known-good copy before any write)
     if path.exists():
         bak = path.with_suffix(".json.bak")
         shutil.copy2(path, bak)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
-        json.dumps(data, indent=indent, ensure_ascii=False),
-        encoding="utf-8",
-    )
+    # Atomic write prevents partial-write corruption on crash
+    atomic_write(path, json.dumps(data, indent=indent, ensure_ascii=False))
 
 
 def _run(cmd: list[str], capture: bool = True) -> tuple[int, str, str]:

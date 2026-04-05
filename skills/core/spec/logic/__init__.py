@@ -8,10 +8,11 @@ Rounds:
   round1       : Assumption challenge — 5+ questions, minimum 5 answered
   round2       : Edge case hunt — 3+ scenarios resolved
   round3       : Write SPEC.md with hardened requirements
-  approve      : User approves/changes/abandons SPEC
+  approve      : User approves/changes/abandons SPEC (also writes workflow gate)
   revise       : User requested changes → rewrite SPEC
 
 State stored in: memory/.spec_debate_state.json
+Workflow gate:  memory/.workflow_gate.json (written on approve)
 """
 from __future__ import annotations
 
@@ -28,6 +29,25 @@ _NEUTRON_ROOT = Path(os.environ.get(
 ))
 MEMORY_DIR = _NEUTRON_ROOT / "memory"
 _STATE_FILE = MEMORY_DIR / ".spec_debate_state.json"
+_WORKFLOW_GATE_FILE = MEMORY_DIR / ".workflow_gate.json"
+
+
+# ─── Workflow Gate Helpers (shared with workflow skill) ────────────────────────
+
+def _load_workflow_gate() -> dict:
+    """Load workflow gate state — mirrors workflow skill's _load_gate()."""
+    if _WORKFLOW_GATE_FILE.exists():
+        try:
+            return json.loads(_WORKFLOW_GATE_FILE.read_text())
+        except Exception:
+            pass
+    return {"spec_approved": False, "acceptance_passed": False, "current_step": None}
+
+
+def _save_workflow_gate(state: dict) -> None:
+    """Save workflow gate state — mirrors workflow skill's _save_gate()."""
+    MEMORY_DIR.mkdir(exist_ok=True)
+    _WORKFLOW_GATE_FILE.write_text(json.dumps(state, indent=2))
 
 
 # ─── State Management ──────────────────────────────────────────────────────────
@@ -73,28 +93,67 @@ def _load_discovery_output() -> dict | None:
 # ─── LEARNED.md Warning Check ─────────────────────────────────────────────────
 
 def _check_learned_warnings(task: str, discovery_content: str) -> list[dict]:
-    """Search LEARNED.md for bugs relevant to this project."""
+    """
+    Search LEARNED.md for bugs relevant to this project.
+
+    Searches BOTH section headers (## Bug: ...) AND body content.
+    Also searches #tag markers embedded in entries.
+
+    This ensures that buried bug descriptions are found, not just titles.
+    """
     learned_path = MEMORY_DIR / "LEARNED.md"
     if not learned_path.exists():
         return []
 
     content = learned_path.read_text()
-    warnings = []
 
     # Keywords to match based on task + discovery
     keywords = _extract_keywords(task, discovery_content)
     if not keywords:
         return []
 
+    warnings = []
     lines = content.split("\n")
-    for i, line in enumerate(lines):
-        if line.startswith("## [") and any(k.lower() in line.lower() for k in keywords):
-            # Grab the next ~10 lines for context
-            snippet = "\n".join(lines[i:i + 10])
-            warnings.append({
-                "title": line.strip(),
-                "snippet": snippet[:300],
-            })
+
+    # Strategy: find all ## [...] blocks, search both header AND body
+    current_block: list[str] = []
+    current_title = ""
+
+    for line in lines:
+        if line.startswith("## [") and ("Bug:" in line or "Bug:" in line):
+            # Process previous block
+            if current_block and current_title:
+                block_text = "\n".join(current_block).lower()
+                matched_keywords = [k for k in keywords if k in block_text]
+                if matched_keywords:
+                    # Check if body (not just title) matched
+                    body_only = "\n".join(current_block[1:]).lower()
+                    if any(k in body_only for k in matched_keywords):
+                        snippet = "\n".join(current_block[:8])
+                        warnings.append({
+                            "title": current_title.strip(),
+                            "matched_keywords": matched_keywords,
+                            "snippet": snippet[:300],
+                        })
+            # Start new block
+            current_block = [line]
+            current_title = line
+        elif current_block is not None:
+            current_block.append(line)
+
+    # Don't forget last block
+    if current_block and current_title:
+        block_text = "\n".join(current_block).lower()
+        matched_keywords = [k for k in keywords if k in block_text]
+        if matched_keywords:
+            body_only = "\n".join(current_block[1:]).lower()
+            if any(k in body_only for k in matched_keywords):
+                snippet = "\n".join(current_block[:8])
+                warnings.append({
+                    "title": current_title.strip(),
+                    "matched_keywords": matched_keywords,
+                    "snippet": snippet[:300],
+                })
 
     return warnings[:3]  # Max 3 warnings
 
@@ -750,6 +809,32 @@ def run_spec_skill(task: str, context: dict = None) -> dict:
 
     # ── PREPARE: Load inputs ─────────────────────────────────────────────────
     if action == "prepare":
+        # Guard: if a debate is already in progress, resume from current round
+        # instead of restarting (prevents stale state + duplicate questions)
+        existing_round = state.get("round", "")
+        existing_task = state.get("task", "")
+        if existing_round in ("round1", "round2", "write"):
+            # Resume from where we left off
+            if existing_round == "round1":
+                round_num = 1
+            elif existing_round == "round2":
+                round_num = 2
+            else:
+                round_num = 3
+            return {
+                "status": "debate_in_progress",
+                "output": (
+                    f"⚠️  SPEC debate already in progress (Round {round_num}).\n\n"
+                    f"Task: {existing_task[:60]}\n"
+                    f"Current round: {existing_round}\n\n"
+                    "Answer the questions above or type 'continue' to proceed."
+                ),
+                "round": existing_round,
+                "next_action": existing_round,
+                "debate_in_progress": True,
+                "ci_delta": 0,
+            }
+
         discovery = _load_discovery_output()
         discovery_content = discovery["content"] if discovery else ""
         warnings = _check_learned_warnings(task, discovery_content)
@@ -937,13 +1022,21 @@ def run_spec_skill(task: str, context: dict = None) -> dict:
     elif action == "approve":
         _clear_state()
 
+        # Also write the workflow gate so /build can run without requiring
+        # the user to call workflow(step='spec', approved=True) explicitly.
+        gate = _load_workflow_gate()
+        gate["spec_approved"] = True
+        gate["spec_approved_at"] = datetime.now().isoformat()
+        gate["spec_approver_notes"] = context.get("notes", "")
+        _save_workflow_gate(gate)
+
         return {
             "status": "spec_approved",
             "output": (
                 "✅ SPEC APPROVED. BUILD IS UNLOCKED.\n\n"
-                "Run: workflow(step='spec', approved=True)\n"
-                "Then: workflow(step='build')\n"
+                "Run: workflow(step='build')\n"
             ),
+            "can_build": True,
             "ci_delta": 5,
         }
 

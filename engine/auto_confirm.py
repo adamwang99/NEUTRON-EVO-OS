@@ -228,7 +228,7 @@ def record_auto_action(step: str, context: dict) -> dict:
 
 
 def _log_auto_action(step: str, notes: str):
-    """Append auto-confirm action to today's memory log."""
+    """Append auto-confirm action to today's memory log (filelock to prevent truncation)."""
     today = datetime.now().strftime("%Y-%m-%d")
     log_path = MEMORY_DIR / f"{today}.md"
     ts = datetime.now().strftime("%H:%M")
@@ -239,8 +239,10 @@ def _log_auto_action(step: str, notes: str):
         f"- Notes: {notes}\n"
     )
     try:
-        content = log_path.read_text(errors="replace") if log_path.exists() else f"# {today}\n"
-        log_path.write_text(content + entry + "\n")
+        lock_path = log_path.with_suffix(".lock")
+        with filelock.FileLock(str(lock_path), timeout=10):
+            content = log_path.read_text(errors="replace") if log_path.exists() else f"# {today}\n"
+            log_path.write_text(content + entry + "\n")
     except Exception as e:
         import sys
         print(f"[AUTO-CONFIRM] WARNING: Failed to log auto-action to {log_path}: {e}", file=sys.stderr)

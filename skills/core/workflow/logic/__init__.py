@@ -225,6 +225,29 @@ def _step_spec(task: str, context: dict) -> dict:
     # Handle revision (user requested changes to SPEC)
     if context.get("revise") or context.get("changes"):
         from skills.core.spec.logic import run_spec_skill
+
+        # Guard: after 3+ revisions, require explicit approved=True
+        revision_count = gate.get("spec_revision_count", 0) + 1
+        if revision_count >= 3:
+            # Force user to either approve or abandon
+            return {
+                "status": "revision_limit_reached",
+                "output": (
+                    f"⚠️  SPEC has been revised {revision_count - 1} time(s). "
+                    "To prevent infinite revision loops:\n\n"
+                    "  A) APPROVE — \"Build it.\"\n"
+                    "     → workflow(step='spec', approved=True)\n\n"
+                    "  B) ABANDON — \"Not what I need.\"\n\n"
+                    "If you need significant changes, abandon and start a new discovery."
+                ),
+                "revision_count": revision_count,
+                "user_action_required": True,
+                "ci_delta": 0,
+            }
+
+        gate["spec_revision_count"] = revision_count
+        _save_gate(gate)
+
         changes = context.get("changes") or context.get("revise", "")
         result = run_spec_skill(task, {"action": "revise", "changes": changes})
         if result.get("status") == "revision_needed":
@@ -232,6 +255,7 @@ def _step_spec(task: str, context: dict) -> dict:
                 "status": "revision_in_progress",
                 "output": result["output"],
                 "next_action": result.get("next_action"),
+                "revision_count": revision_count,
                 "ci_delta": 0,
             }
         write_result = run_spec_skill(task, {"action": "write"})
@@ -239,6 +263,7 @@ def _step_spec(task: str, context: dict) -> dict:
             "status": "spec_written",
             "output": write_result["output"],
             "spec_path": write_result.get("spec_path"),
+            "revision_count": revision_count,
             "user_action_required": True,
             "ci_delta": write_result.get("ci_delta", 0),
         }
@@ -247,11 +272,42 @@ def _step_spec(task: str, context: dict) -> dict:
     spec_action = context.get("spec_action", "prepare")
 
     from skills.core.spec.logic import run_spec_skill
-    result = run_spec_skill(task, {
-        "action": spec_action,
-        "answers": context.get("answers", {}),
-        "resolutions": context.get("resolutions", {}),
-    })
+    try:
+        result = run_spec_skill(task, {
+            "action": spec_action,
+            "answers": context.get("answers", {}),
+            "resolutions": context.get("resolutions", {}),
+        })
+    except Exception as e:
+        # Surface skill exceptions clearly — do NOT return silent execution_error
+        return {
+            "status": "spec_debate_error",
+            "output": (
+                f"❌ SPEC skill crashed: {e}\n\n"
+                "Recovery options:\n"
+                "  1. Retry: workflow(step='spec', spec_action='prepare')\n"
+                "  2. Skip debate: workflow(step='spec', write_spec=True, spec_content='...')\n"
+                "  3. Abandon: workflow(step='spec', approved=False)\n"
+            ),
+            "error_type": type(e).__name__,
+            "error_detail": str(e),
+            "user_action_required": True,
+            "ci_delta": -5,
+        }
+
+    # Surface execution_error from skill pipeline clearly
+    if result.get("status") == "execution_error":
+        return {
+            "status": "spec_debate_error",
+            "output": (
+                f"❌ SPEC skill execution error: {result.get('output', 'unknown error')}\n\n"
+                "Recovery:\n"
+                "  1. Retry: workflow(step='spec', spec_action='prepare')\n"
+                "  2. Write SPEC directly: workflow(step='spec', write_spec=True, spec_content='...')\n"
+            ),
+            "user_action_required": True,
+            "ci_delta": result.get("ci_delta", -10),
+        }
 
     return {
         "status": result.get("status", "spec_debate"),
@@ -262,6 +318,7 @@ def _step_spec(task: str, context: dict) -> dict:
         "discovery_path": result.get("discovery_path"),
         "edge_cases": result.get("edge_cases"),
         "spec_path": result.get("spec_path"),
+        "can_build": result.get("can_build"),
         "user_action_required": result.get("next_action") == "approve",
         "ci_delta": result.get("ci_delta", 0),
     }
