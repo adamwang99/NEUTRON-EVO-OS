@@ -1,6 +1,11 @@
 """
-NEUTRON-EVO-OS: Dream Engine — Memory 2.0 Core
-Implements Pruning (delete noise) and Distillation (compress logs into Cookbooks).
+NEUTRON-EVO-OS: Dream Engine — Memory 2.0 Core with AI Gatekeeper
+Implements an AI-driven 5-phase pipeline:
+  1. AI_ANALYZE  — Claude Opus classifies session events
+  2. FILTER      — pre-filter noise before sending to AI
+  3. SYNTHESIZE  — build decision-tree cookbooks
+  4. SUGGEST     — write LEARNED_pending.md drafts (human approval gate)
+  5. ARCHIVE/PRUNE — standard log compression + retention
 """
 from __future__ import annotations
 
@@ -21,51 +26,403 @@ NEUTRON_ROOT = Path(os.environ.get("NEUTRON_ROOT", Path(__file__).parent.parent)
 MEMORY_DIR = NEUTRON_ROOT / "memory"
 ARCHIVED_DIR = MEMORY_DIR / "archived"
 COOKBOOKS_DIR = MEMORY_DIR / "cookbooks"
+PENDING_DIR = MEMORY_DIR / "pending"          # LEARNED_pending.md drafts
 NOISE_THRESHOLD_DAYS = 3   # days old before archiving
 ARCHIVED_RETENTION_DAYS = 7  # max age for archived files
+MAX_COOKBOOK_SIZE_KB = 50   # truncate long logs before AI analysis
 
 # Re-entrancy guard: prevents concurrent dream cycles
 _dream_running = threading.Event()
 
 # Sentinel file — if this file exists, observer should NOT restart dream cycle
-# Prevents re-trigger after the cycle itself creates files
 _DREAM_SENTINEL = MEMORY_DIR / ".dream_active"
 
 
+# ── Noise pre-filter patterns ────────────────────────────────────────────────
+
+# Absolute noise: ALWAYS filtered, regardless of keywords.
+# These represent structural/logging artifacts, not actual events.
+_ABSOLUTE_NOISE_PATTERNS = [
+    # Skill checkpoint format (fixed, repeated every skill call)
+    re.compile(r"^\s*##\s+\[\d{2}:\d{2}\]\s+—\s+Skill:\s+\w+\s+\|\s+Task:"),
+    # Test passes
+    re.compile(r"(?:PASSED|passed|ok|✓|✔)\s*(?:test|Test|pytest|Pytest)", re.IGNORECASE),
+    re.compile(r"(?:test|pytest).*(?:pass|ok)", re.IGNORECASE),
+    # Read-only commands (grep, ls, cat, pwd, find, echo, head, tail)
+    # ALWAYS noise: grepping "error" ≠ having an error
+    re.compile(r"^\s*(?:grep|ls|cat|pwd|find|head|tail|echo|which|whoami|id)[\s\-(@]", re.IGNORECASE),
+    # Empty/no-op lines
+    re.compile(r"^\s*(?:-|–|-|\*)\s*$"),
+    re.compile(r"^\s*(?:Outcome:|Action:|Notes:)\s*$"),
+    # MCP tool invocations
+    re.compile(r"^.*(?:mcp__|MCP\s).*$"),
+]
+
+# Keyword-dependent noise: filtered if no stack trace / file:line context.
+# Generic errors without context → filtered. Real errors with context → keep.
+_STACKTRACE_PATTERN = re.compile(
+    r"(?:File\s+\"|'[^']+\.py'|\.py\",?\s+line|traceback|at\s+\w+\.|"
+    r"raise\s+\w+|Error:|Exception:)"
+)
+
+# Keywords that indicate a line is SIGNIFICANT even if it matches keyword-noise.
+# Only applies when the line also has stack trace / file context.
+_SIGNIFICANT_KEYWORDS = [
+    "error", "exception", "fail", "traceback", "stderr",
+    "decision:", "approved", "chose", "rejected", "selected",
+    "root cause", "bug:", "fix:", "symptom",
+    "unexpected", "should not", "but got", "expected",
+]
+
+
+def _is_noise(line: str) -> bool:
+    """
+    Classify a single log line as noise.
+    Returns True = skip (don't send to AI).
+    - Absolute patterns: always noise
+    - Keyword patterns: only noise if no significant keywords + context
+    """
+    for pat in _ABSOLUTE_NOISE_PATTERNS:
+        if pat.search(line):
+            return True
+    # Generic execution_error without context → always noise
+    if re.search(r"^\s*(?:-|–|-|\*)\s*Outcome:\s*execution_error\s*$", line, re.IGNORECASE):
+        return True
+    return False
+
+
+def _normalize_event(line: str) -> str:
+    """Normalize a line for duplicate detection."""
+    # Strip timestamps, paths, hashes
+    result = re.sub(r"\d{4}-\d{2}-\d{2}", "[DATE]", line)
+    result = re.sub(r"/[\w/\.-]+", "[PATH]", result)
+    result = re.sub(r"[a-f0-9]{6,}", "[HASH]", result)
+    result = re.sub(r"\d{2}:\d{2}:\d{2}", "[TIME]", result)
+    return result.strip()
+
+
+def _pre_filter(content: str) -> tuple[str, dict]:
+    """
+    Pre-filter raw log content before sending to AI.
+    Returns (filtered_content, stats_dict).
+    Stats: lines_removed, duplicates_removed, lines_kept.
+    """
+    lines = content.splitlines()
+    kept = []
+    dup_count: dict[str, int] = {}
+
+    for line in lines:
+        if _is_noise(line.strip()):
+            continue
+        kept.append(line)
+
+    # Deduplicate: count normalized lines, remove if ≥3 occurrences
+    filtered = []
+    for line in kept:
+        norm = _normalize_event(line)
+        dup_count[norm] = dup_count.get(norm, 0) + 1
+
+    for line in kept:
+        norm = _normalize_event(line)
+        if dup_count[norm] >= 3:
+            continue  # skip duplicate ≥3x
+        filtered.append(line)
+
+    stats = {
+        "lines_removed_noise": sum(1 for l in lines if _is_noise(l.strip())),
+        "duplicates_removed": sum(c - 1 for c in dup_count.values() if c >= 3),
+        "lines_kept": len(filtered),
+    }
+    return "\n".join(filtered), stats
+
+
+# ── AI Analysis via Claude API ──────────────────────────────────────────────
+
+def _call_claude_analysis(filtered_log: str, learned_content: str = "") -> dict:
+    """
+    Call Claude Opus API to analyze session logs and produce structured output.
+    Returns dict with keys: significant_events, cookbook_sections, learned_drafts.
+    """
+    try:
+        import anthropic
+    except ImportError:
+        return {
+            "status": "error",
+            "message": "anthropic package not installed: pip install anthropic",
+            "significant_events": [],
+            "cookbook_sections": [],
+            "learned_drafts": [],
+        }
+
+    model = os.environ.get("ANTHROPIC_MODEL", "claude-opus-4-20250514")
+    api_key = os.environ.get("ANTHROPIC_AUTH_TOKEN", "")
+
+    if not api_key:
+        return {
+            "status": "error",
+            "message": "ANTHROPIC_AUTH_TOKEN not set — cannot run AI analysis",
+            "significant_events": [],
+            "cookbook_sections": [],
+            "learned_drafts": [],
+        }
+
+    # Search LEARNED.md for existing patterns (don't re-feed into prompt)
+    existing_bugs = []
+    if learned_content:
+        # Extract bug titles for dedup
+        for line in learned_content.splitlines():
+            if re.match(r"^\s*##?\s+\[.*?\]\s+Bug:", line, re.IGNORECASE):
+                existing_bugs.append(line.strip()[:100])
+
+    system_prompt = """You are a senior software engineer reviewing a coding session log.
+Your job: identify SIGNIFICANT events and synthesize actionable patterns.
+
+**Output format: valid JSON only, no markdown, no explanation outside JSON.**
+
+{
+  "significant_events": [
+    {
+      "type": "error|decision|unexpected|novel",
+      "summary": "one-line summary",
+      "context": "relevant context lines",
+      "severity": "high|medium|low",
+      "raw_snippets": ["relevant line 1", "relevant line 2"]
+    }
+  ],
+  "cookbook_sections": [
+    {
+      "title": "Bug: <descriptive title>",
+      "trigger": "When does this happen?",
+      "recognition": "How to recognize this pattern?",
+      "resolution": "Step-by-step fix (use code blocks if helpful)",
+      "prevention": "How to prevent recurrence?",
+      "related_events": [index in significant_events array]
+    }
+  ],
+  "learned_drafts": [
+    {
+      "title": "<bug title>",
+      "symptom": "What went wrong?",
+      "root_cause": "Why did it happen?",
+      "fix": "Exact fix (file:line if known)",
+      "tags": "#tag1 #tag2"
+    }
+  ]
+}
+
+**Classification rules:**
+- SIGNIFICANT: real errors with stack traces, decisions with WHY, unexpected outcomes, first-time patterns
+- NOISE (skip): skill checkpoints, test passes, read-only commands, duplicates ≥3x, generic errors without context
+
+**Cookbook style:** Write for a developer encountering this problem fresh.
+Be specific. Use code examples where helpful. Resolution steps must be actionable.
+
+If no significant events found, return empty arrays. Never fabricate events."""
+
+    try:
+        client = anthropic.Anthropic(api_key=api_key)
+        # Truncate if too long (AI token budget)
+        truncated = filtered_log[-80_000:] if len(filtered_log) > 80_000 else filtered_log
+
+        response = client.messages.create(
+            model=model,
+            max_tokens=4096,
+            system=system_prompt,
+            messages=[{"role": "user", "content": f"Session logs:\n{truncated}"}],
+            timeout=60.0,
+        )
+        raw = response.content[0].text.strip()
+        # Strip markdown code fences
+        if raw.startswith("```"):
+            raw = raw.split("```")[1]
+            if raw.startswith("json"):
+                raw = raw[4:]
+        return json.loads(raw)
+    except json.JSONDecodeError as e:
+        logger.warning(f"Dream Cycle: AI response not valid JSON: {e}")
+        return {"status": "error", "message": f"AI response parse error: {e}",
+                "significant_events": [], "cookbook_sections": [], "learned_drafts": []}
+    except Exception as e:
+        logger.warning(f"Dream Cycle: AI call failed: {e}")
+        return {"status": "error", "message": str(e),
+                "significant_events": [], "cookbook_sections": [], "learned_drafts": []}
+
+
+# ── Cookbook writing ────────────────────────────────────────────────────────
+
+def _write_cookbook(log_name: str, ai_result: dict, timestamp: str) -> list[str]:
+    """Write a decision-tree cookbook from AI result."""
+    COOKBOOKS_DIR.mkdir(exist_ok=True)
+    path = COOKBOOKS_DIR / f"{log_name}_cookbook.md"
+
+    lines = [
+        f"# Cookbook: {log_name}",
+        "",
+        f"> Distilled on {datetime.now().strftime('%Y-%m-%d %H:%M')}",
+        f"> ∫f(t)dt — Functional Credibility Over Institutional Inertia",
+        "",
+    ]
+
+    sig_events = ai_result.get("significant_events", [])
+    if sig_events:
+        high = [e for e in sig_events if e.get("severity") == "high"]
+        med = [e for e in sig_events if e.get("severity") == "medium"]
+        lines.append(f"## Significant Events ({len(sig_events)} total)")
+        lines.append(f"- High severity: {len(high)} | Medium: {len(med)}")
+        lines.append("")
+        for e in sig_events[:10]:
+            lines.append(f"- **{e['type'].upper()}** ({e['severity']}): {e['summary']}")
+        lines.append("")
+
+    sections = ai_result.get("cookbook_sections", [])
+    if sections:
+        lines.append(f"## Actionable Patterns ({len(sections)} discovered)")
+        lines.append("")
+        for s in sections:
+            lines.append(f"### {s['title']}")
+            for field in ["trigger", "recognition", "resolution", "prevention"]:
+                if s.get(field):
+                    lines.append(f"**{field.title()}:**")
+                    # Indent code blocks
+                    for ln in s[field].split("\n"):
+                        lines.append(f"    {ln}" if ln.strip().startswith("```") else f"  {ln}")
+                    lines.append("")
+        lines.append("")
+
+    if not sections and not sig_events:
+        lines.extend([
+            "## Summary",
+            "No significant events detected in this session.",
+            "The session was clean — all events were noise or expected.",
+            "",
+        ])
+
+    lines.extend([
+        "---",
+        "*Auto-generated by NEUTRON Dream Cycle (AI analysis). Do not edit — archive instead.*",
+    ])
+
+    path.write_text("\n".join(lines))
+    return [str(path)]
+
+
+# ── LEARNED pending drafts ──────────────────────────────────────────────────
+
+def _write_learned_pending(drafts: list[dict]) -> int:
+    """
+    Write AI-generated LEARNED drafts to memory/pending/LEARNED_pending.md.
+    These require human approval before becoming official LEARNED entries.
+    Auto-expire: entries older than 7 days → archived/.
+    """
+    if not drafts:
+        return 0
+    PENDING_DIR.mkdir(exist_ok=True)
+    pending_path = PENDING_DIR / "LEARNED_pending.md"
+    today = datetime.now()
+    today_str = today.strftime("%Y-%m-%d")
+    draft_id_base = today.strftime("%Y%m%d")
+
+    # Read existing content
+    existing = pending_path.read_text() if pending_path.exists() else ""
+
+    entries = []
+    for i, draft in enumerate(drafts, 1):
+        draft_id = f"pending-{draft_id_base}-{i}"
+        entry = (
+            f"\n## [{today_str}] [PENDING] Bug: {draft['title']}\n"
+            f"- **Symptom:** {draft['symptom']}\n"
+            f"- **Root cause:** {draft['root_cause']}\n"
+            f"- **Fix:** {draft['fix']}\n"
+            f"- **Tags:** {draft.get('tags', '#bug')}\n"
+            f"- **Draft ID:** {draft_id}\n"
+            f"- **Suggested by:** AI (Dream Cycle)\n"
+            f"- **Status:** awaiting approval\n"
+        )
+        entries.append(entry)
+
+    pending_path.write_text(existing + "\n".join(entries))
+    return len(drafts)
+
+
+def _prune_expired_pending() -> int:
+    """
+    Remove pending entries older than 7 days (auto-archive, not delete).
+    Returns count of entries pruned.
+    """
+    if not PENDING_DIR.exists():
+        return 0
+    pending_path = PENDING_DIR / "LEARNED_pending.md"
+    if not pending_path.exists():
+        return 0
+
+    ARCHIVED_DIR.mkdir(exist_ok=True)
+    content = pending_path.read_text()
+    lines = content.splitlines()
+    cutoff = datetime.now() - timedelta(days=7)
+    kept = []
+    expired = []
+
+    for i, line in enumerate(lines):
+        if line.startswith("## ["):
+            # Extract date from "## [YYYY-MM-DD]"
+            m = re.search(r"\[(\d{4}-\d{2}-\d{2})\]", line)
+            if m:
+                try:
+                    entry_date = datetime.strptime(m.group(1), "%Y-%m-%d")
+                    if entry_date < cutoff:
+                        # This entry is expired — collect all its lines
+                        j = i
+                        while j < len(lines) and not (j > i and lines[j].startswith("## [")):
+                            j += 1
+                        expired.append("\n".join(lines[i:j]))
+                        continue
+                except ValueError:
+                    pass
+        kept.append(line)
+
+    if expired:
+        # Archive expired entries
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+        archive_path = ARCHIVED_DIR / f"LEARNED_pending_expired_{ts}.md"
+        archive_path.write_text("\n".join(expired))
+        pending_path.write_text("\n".join(kept))
+        logger.info(f"Dream Cycle: archived {len(expired)} expired LEARNED pending entries")
+
+    return len(expired)
+
+
+# ── Main Dream Cycle ────────────────────────────────────────────────────────
+
 def dream_cycle(json_output: bool = True) -> dict | str:
     """
-    Execute a full Dream Cycle:
-    1. Archive today's logs to /memory/archived/
-    2. Prune noise (files not referenced in N days)
-    3. Distill remaining logs into Cookbooks
-    4. Cap archived/ retention (max age or max count)
+    Execute a full Dream Cycle with AI-powered analysis.
+
+    5-phase pipeline:
+      1. AI_ANALYZE  — call Claude Opus API on pre-filtered session logs
+      2. FILTER      — pre-filter noise before sending to AI
+      3. SYNTHESIZE  — write decision-tree cookbooks
+      4. SUGGEST     — write LEARNED_pending.md drafts for human approval
+      5. ARCHIVE/PRUNE — compress logs + standard retention cleanup
 
     Args:
-        json_output: if True (default), returns a JSON string (for CLI/print output).
+        json_output: if True (default), returns a JSON string (for CLI output).
                      if False, returns a dict (for programmatic use).
-
-    Returns: dict, or JSON string if json_output=True.
-
-    Note: Does NOT restart the observer — observer lifecycle is managed externally
-    by make live or engine skill observer_start/observer_stop.
     """
     if _dream_running.is_set():
-        result = {"status": "skipped", "reason": "already running"}
+        result = {"status": "skipped", "reason": "dream cycle already running"}
         return json.dumps(result) if json_output else result
 
     _dream_running.set()
     try:
-        # Write sentinel BEFORE doing work — prevents observer from re-triggering
         _DREAM_SENTINEL.write_text(datetime.now().isoformat())
         result = _dream_cycle_inner()
         return json.dumps(result) if json_output else result
     finally:
         _dream_running.clear()
-        # Remove sentinel AFTER work is done — observer can now safely trigger
         try:
             _DREAM_SENTINEL.unlink(missing_ok=True)
         except Exception as e:
-            logger.error(f"Dream Cycle: failed to remove sentinel {_DREAM_SENTINEL} — {e}")
+            logger.error(f"Dream Cycle: failed to remove sentinel — {e}")
 
 
 def _dream_cycle_inner() -> dict:
@@ -74,88 +431,137 @@ def _dream_cycle_inner() -> dict:
 
     3-tier memory management:
       SHORT  (active log): today's YYYY-MM-DD.md — kept live, never auto-deleted
-                            Only Dream Cycle compresses it after distillation
-      MID   (cookbooks):   distill_log() extracts patterns → cookbooks/
-                            Each day gets one cookbook with CI stats, errors, decisions
-      LONG  (archived):    Old YYYY-MM-DD.md copies → archived/ with 7-day retention
-                            Oldest beyond retention → deleted
+      MID   (cookbooks):   AI-synthesized decision-tree cookbooks in cookbooks/
+      LONG  (archived):   Old YYYY-MM-DD.md → archived/ with 7-day retention
     """
-    # Ensure dirs exist
     ARCHIVED_DIR.mkdir(exist_ok=True)
     COOKBOOKS_DIR.mkdir(exist_ok=True)
+    PENDING_DIR.mkdir(exist_ok=True)
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     now = datetime.now()
     today_str = now.strftime("%Y-%m-%d")
+    cookbooks_written = []
 
-    # --- Archive Phase ---
-    # Only archive .md logs OLDER than today — today's log stays live.
-    # Also archive logs that are oversized (>MAX_LINES_THRESHOLD lines).
-    MAX_LINES_THRESHOLD = 10_000
+    # ── Phase 1 & 2: Pre-filter + AI Analyze ────────────────────────────────
+    # Read logs from last 3 days
+    logs_by_date: dict[str, str] = {}
+    for n_days in range(3):
+        log_date = (now - timedelta(days=n_days)).strftime("%Y-%m-%d")
+        log_file = MEMORY_DIR / f"{log_date}.md"
+        if log_file.exists():
+            try:
+                logs_by_date[log_date] = log_file.read_text()
+            except Exception:
+                pass
+
+    # Pre-filter each log
+    filtered_by_date: dict[str, tuple[str, dict]] = {}
+    for date, content in logs_by_date.items():
+        filtered, stats = _pre_filter(content)
+        filtered_by_date[date] = (filtered, stats)
+
+    # Read existing LEARNED.md for dedup (search only, not in prompt)
+    learned_path = MEMORY_DIR / "LEARNED.md"
+    existing_learned = learned_path.read_text() if learned_path.exists() else ""
+
+    # Call AI on each day's filtered log
+    all_sig_events: list[dict] = []
+    all_cookbook_sections: list[dict] = []
+    all_learned_drafts: list[dict] = []
+    ai_errors: list[str] = []
+
+    for date, (filtered, stats) in filtered_by_date.items():
+        if not filtered.strip():
+            continue
+
+        ai_result = _call_claude_analysis(filtered, learned_content=existing_learned)
+
+        if ai_result.get("status") == "error":
+            ai_errors.append(f"{date}: {ai_result.get('message', 'unknown')}")
+            continue
+
+        # Write cookbook for this day
+        log_name = date
+        written = _write_cookbook(log_name, ai_result, timestamp)
+        cookbooks_written.extend(written)
+
+        # Collect for global pending entries
+        for draft in ai_result.get("learned_drafts", []):
+            draft["_date"] = date
+            all_learned_drafts.append(draft)
+        for section in ai_result.get("cookbook_sections", []):
+            section["_date"] = date
+            all_cookbook_sections.append(section)
+        for event in ai_result.get("significant_events", []):
+            event["_date"] = date
+            all_sig_events.append(event)
+
+    # ── Phase 3: Write LEARNED pending drafts ──────────────────────────────
+    pending_count = _write_learned_pending(all_learned_drafts)
+
+    # ── Phase 4: Prune expired pending entries ────────────────────────────
+    expired_count = _prune_expired_pending()
+
+    # ── Phase 5: Archive old logs + standard retention ───────────────────
     archived_count = 0
     archived_files = []
+    MAX_LINES = 10_000
+
     for log in MEMORY_DIR.iterdir():
         if not (log.is_file() and log.suffix == ".md"):
             continue
         if log.name.startswith(".dream_active"):
             continue
         if log.name.startswith(today_str):
-            # Today's log — check if it's oversized
+            # Today's log — check if oversized
             try:
                 line_count = sum(1 for _ in log.open())
-                if line_count > MAX_LINES_THRESHOLD:
+                if line_count > MAX_LINES:
                     dest = ARCHIVED_DIR / f"{log.stem}_{timestamp}{log.suffix}"
                     shutil.copy2(log, dest)
                     archived_files.append(f"{log.name} ({line_count} lines — oversized)")
                     archived_count += 1
-                    # Truncate to preserve last 500 lines
                     lines = log.read_text().splitlines()
                     log.write_text("\n".join(lines[-500:]) + "\n")
                     archived_files.append(f"  → {log.name} truncated to 500 lines")
             except Exception as e:
                 logger.warning(f"Dream Cycle: could not process oversized log {log}: {e}")
-            continue  # Don't archive today's log normally
+            continue
+        # Archive old logs
         dest = ARCHIVED_DIR / f"{log.stem}_{timestamp}{log.suffix}"
         shutil.copy2(log, dest)
         archived_files.append(log.name)
         archived_count += 1
 
-    # --- Prune Phase (old .tmp/.cache files only) ---
+    # Prune old .tmp/.cache noise files
     cutoff = now - timedelta(days=NOISE_THRESHOLD_DAYS)
     pruned_files = []
     for item in list(MEMORY_DIR.iterdir()) + list(ARCHIVED_DIR.iterdir()):
-        if item.name in ("archived", "cookbooks", ".dream_active"):
+        if item.name in ("archived", "cookbooks", "pending", ".dream_active"):
             continue
         if item.is_file() and item.suffix in (".tmp", ".cache"):
-            mtime = datetime.fromtimestamp(item.stat().st_mtime)
-            if mtime < cutoff:
-                item.unlink()
-                pruned_files.append(item.name)
+            try:
+                mtime = datetime.fromtimestamp(item.stat().st_mtime)
+                if mtime < cutoff:
+                    item.unlink()
+                    pruned_files.append(item.name)
+            except Exception:
+                pass
 
-    # --- Archive Retention Cap ---
-    # Cap archived/ to ARCHIVED_RETENTION_DAYS (default 7 days).
-    # Sort by mtime, delete oldest beyond threshold.
+    # Cap archived/ retention
     archived_cutoff = now - timedelta(days=ARCHIVED_RETENTION_DAYS)
-    deleted_retention = 0
+    retention_deleted = 0
     for archived_file in sorted(ARCHIVED_DIR.iterdir(), key=lambda f: f.stat().st_mtime):
-        mtime = datetime.fromtimestamp(archived_file.stat().st_mtime)
-        if mtime < archived_cutoff:
-            archived_file.unlink()
-            deleted_retention += 1
+        try:
+            mtime = datetime.fromtimestamp(archived_file.stat().st_mtime)
+            if mtime < archived_cutoff:
+                archived_file.unlink()
+                retention_deleted += 1
+        except Exception:
+            pass
 
-    # --- Distill Phase (top-level .md only) ---
-    distilled = []
-    for log in MEMORY_DIR.iterdir():
-        if not (log.is_file() and log.suffix == ".md"):
-            continue
-        if log.name.startswith(".dream_active"):
-            continue
-        result = distill_log(str(log))
-        if result.get("status") == "distilled":
-            distilled.append(result["cookbook"])
-
-    # --- Stop observer during dream cycle (avoid re-trigger) ---
-    # Pass NEUTRON_ROOT so stop() only affects THIS project, not sibling observers
+    # Stop observer during dream cycle
     try:
         SilentObserver.stop(str(NEUTRON_ROOT))
     except Exception:
@@ -168,168 +574,12 @@ def _dream_cycle_inner() -> dict:
         "archived_files": archived_files,
         "pruned": len(pruned_files),
         "pruned_files": pruned_files,
-        "distilled": len(distilled),
-        "cookbooks": distilled,
-        "retention_deleted": deleted_retention,
-    }
-
-
-def distill_log(log_path: str) -> dict:
-    """
-    Compress a log into a Cookbook summary with actionable insights.
-    Extracts patterns, errors, decisions, and CI scores from session logs.
-    No LLM needed — pure heuristic analysis.
-
-    Returns: {status, cookbook, entries_extracted}
-    """
-    path = Path(log_path)
-    if not path.exists():
-        return {"status": "error", "message": f"Log not found: {log_path}"}
-
-    content = path.read_text()
-    lines = [l.strip() for l in content.splitlines() if l.strip()]
-
-    # ── Extract structured data ───────────────────────────────────────────
-    # CI deltas
-    ci_deltas = []
-    for l in lines:
-        m = re.search(r"ci delta:\s*([+-]?\d+)", l, re.IGNORECASE)
-        if m:
-            ci_deltas.append(int(m.group(1)))
-
-    # Errors
-    error_lines = [l for l in lines if "error" in l.lower() or "fail" in l.lower()]
-    # Ok/completed lines
-    ok_lines = [l for l in lines if l.lower().startswith("outcome:") and "ok" in l.lower()]
-    # Decisions
-    decision_lines = [l for l in lines if "decision:" in l.lower()]
-    # Checkpoints (milestones)
-    checkpoint_lines = [l for l in lines if l.startswith("## [")]
-    # Skills invoked
-    skill_invocations = re.findall(r"skill:\s*(\w+)", " ".join(lines), re.IGNORECASE)
-
-    # Repeated error patterns (same error ≥ 2x → flagged)
-    error_counts: dict[str, int] = {}
-    for l in error_lines:
-        # Normalize: strip timestamps and paths
-        normalized = re.sub(r"\d{4}-\d{2}-\d{2}", "[DATE]", l)
-        normalized = re.sub(r"/[\w/\.-]+", "[PATH]", normalized)
-        normalized = re.sub(r"[a-f0-9]{6,}", "[HASH]", normalized)
-        error_counts[normalized] = error_counts.get(normalized, 0) + 1
-    repeated_errors = {k: v for k, v in error_counts.items() if v >= 2}
-
-    # ── Build cookbook ─────────────────────────────────────────────────────
-    cookbook_name = f"{path.stem}_cookbook.md"
-    cookbook_path = COOKBOOKS_DIR / cookbook_name
-
-    total_ci = sum(ci_deltas)
-    net_ci = sum(ci_deltas)
-    ci_label = "positive" if net_ci >= 0 else "concerning"
-
-    cookbook_content = [
-        f"# Cookbook: {path.stem}",
-        "",
-        f"> Distilled on {datetime.now().strftime('%Y-%m-%d %H:%M')}",
-        f"> ∫f(t)dt — Functional Credibility Over Institutional Inertia",
-        "",
-        f"## Summary",
-        f"- Sessions log: {path.name}",
-        f"- Checkpoints recorded: {len(checkpoint_lines)}",
-        f"- Skills invoked: {len(skill_invocations)}",
-        f"- CI delta total: {total_ci:+.0f} ({ci_label})",
-        f"- Outcomes: {len(ok_lines)} ok / {len(error_lines)} errors",
-        f"- Decisions recorded: {len(decision_lines)}",
-        "",
-    ]
-
-    if repeated_errors:
-        cookbook_content += [
-            f"## ⚠️  Repeated Errors ({len(repeated_errors)} pattern(s))",
-            "These errors appeared 2+ times — consider adding to LEARNED.md:",
-            "",
-        ]
-        for err, count in sorted(repeated_errors.items(), key=lambda x: -x[1]):
-            cookbook_content.append(f"- [{count}x] {err[:100]}")
-        cookbook_content.append("")
-
-    if decision_lines:
-        cookbook_content += [
-            f"## 📌 Decisions ({len(decision_lines)})",
-            "",
-        ]
-        for d in decision_lines[:10]:
-            cookbook_content.append(f"- {d[:120]}")
-        cookbook_content.append("")
-
-    if error_lines:
-        cookbook_content += [
-            f"## Errors Encountered ({len(error_lines)})",
-            "",
-        ]
-        for e in error_lines[:10]:
-            cookbook_content.append(f"- {e[:120]}")
-        cookbook_content.append("")
-
-    cookbook_content += [
-        f"## Key Milestones ({len(checkpoint_lines)})",
-        "",
-    ]
-    for c in checkpoint_lines[:20]:
-        cookbook_content.append(f"- {c[:120]}")
-    cookbook_content.append("")
-
-    if skill_invocations:
-        # Count skill usage
-        skill_counts: dict[str, int] = {}
-        for s in skill_invocations:
-            skill_counts[s.lower()] = skill_counts.get(s.lower(), 0) + 1
-        cookbook_content += [
-            f"## 🔧 Skills Used ({len(skill_invocations)} invocations)",
-            "",
-        ]
-        for s, c in sorted(skill_counts.items(), key=lambda x: -x[1]):
-            cookbook_content.append(f"- {s}: {c}x")
-        cookbook_content.append("")
-
-    cookbook_content += [
-        f"## CI Breakdown",
-        f"- Total CI delta: {total_ci:+.0f}",
-        f"- Actions: {len(ci_deltas)}",
-        f"- Avg per action: {total_ci/len(ci_deltas):.1f}" if ci_deltas else "- No CI data",
-        "",
-        "---",
-        "*Auto-generated by NEUTRON Dream Cycle. Do not edit — archive instead.*",
-    ]
-
-    cookbook_path.write_text("\n".join(cookbook_content))
-
-    return {
-        "status": "distilled",
-        "cookbook": str(cookbook_path),
-        "entries_extracted": len(checkpoint_lines) + len(error_lines) + len(decision_lines),
-        "repeated_errors": len(repeated_errors),
-        "net_ci": net_ci,
-    }
-
-
-def archive_user_data(file_path: str) -> dict:
-    """
-    Safely archive user data to /memory/archived/.
-    Returns: {status, archived_to}
-    """
-    path = Path(file_path)
-    if not path.exists():
-        return {"status": "error", "message": f"File not found: {file_path}"}
-
-    ARCHIVED_DIR.mkdir(exist_ok=True)
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    archived_name = f"{path.stem}_{timestamp}{path.suffix}"
-    archived_path = ARCHIVED_DIR / archived_name
-
-    shutil.copy2(path, archived_path)
-
-    return {
-        "status": "archived",
-        "archived_to": str(archived_path),
-        "original": str(path),
+        "cookbooks_written": len(cookbooks_written),
+        "cookbooks": cookbooks_written,
+        "pending_entries": pending_count,
+        "expired_pending": expired_count,
+        "retention_deleted": retention_deleted,
+        "significant_events": len(all_sig_events),
+        "cookbook_patterns": len(all_cookbook_sections),
+        "ai_errors": ai_errors,
     }

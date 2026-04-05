@@ -431,6 +431,8 @@ def cmd_memory(args: argparse.Namespace) -> int:
         "action": action,
         "query": args.query,
         "file_path": args.file_path,
+        "draft_id": args.draft_id,
+        "hub_root": args.hub,
     })
     print(_format_result(r))
     return 0
@@ -849,8 +851,9 @@ Examples:
 
     # memory
     p = sub.add_parser("memory", help="Memory operations")
-    p.add_argument("action", nargs="?", choices=["log", "archive", "search", "dream", "status", "sync"], default="status")
+    p.add_argument("action", nargs="?", choices=["log", "archive", "search", "dream", "status", "sync", "pending", "approve", "reject"], default="status")
     p.add_argument("--hub", dest="hub", help="Hub root path (for sync action)")
+    p.add_argument("--draft-id", dest="draft_id", help="Draft ID (for approve/reject actions)")
     p.add_argument("task", nargs="?", help="Task for log action")
     p.add_argument("--query", dest="query", help="Search query")
     p.add_argument("--file", dest="file_path", help="File to archive")

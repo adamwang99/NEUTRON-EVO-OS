@@ -115,3 +115,27 @@ When you fix a bug or discover a pattern:
 - **Tags:** #boundary #memory #scope
 - **Lesson:** Decisions must be scoped to the correct project root. Each project
   should have its own memory/ directory with its own user_decisions.json.
+
+## [2026-04-05] Bug: decisions/shipments.json had no file locking
+
+- **Symptom:** Concurrent sessions writing to user_decisions.json or shipments.json
+  could silently overwrite each other's data. JSON could become invalid on collision.
+- **Root cause:** Read-modify-write on both files had no synchronization.
+  No filelock, no atomic write. Session A reads, Session B reads, both write,
+  one overwrite the other.
+- **Fix:** Added _locked_read_write() helper using filelock.FileLock with 10s timeout.
+  All read-modify-write on decisions/shipments now uses filelock + atomic write.
+  ()
+- **Tags:** #concurrency #data-corruption #filelock
+- **Lesson:** Any shared JSON file written by multiple processes needs filelock.
+
+## [2026-04-05] Bug: pre-commit LEARNED-check hook was a no-op
+
+- **Symptom:** check-learned-entry.py always returned True (exit 0), even for
+  fix: commits without LEARNED.md entries. No enforcement.
+- **Root cause:** Comment said "change to sys.exit(1) for hard requirement"
+  but the code was never updated. Developer could skip LEARNED.md entirely.
+- **Fix:** Changed to sys.exit(1) — HARD BLOCK on fix: commits without LEARNED.md entry.
+- **Tags:** #hook #enforcement
+- **Lesson:** Warning-only hooks are not enforcement. If a rule exists, it must block.
+

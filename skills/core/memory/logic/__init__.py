@@ -11,6 +11,7 @@ Actions (via context["action"]):
   - learned  : add entry to memory/LEARNED.md, or search by tag/keyword
   - decision : record or query key decisions (user_decisions.json)
   - shipment : record or query shipped projects (shipments.json)
+  - sync    : extract bugs/decisions from local logs → push to hub NEUTRON_HUB_ROOT
 
 CI rewards: log=+2, archive=+3, dream=+10, learned=+5, decision=+3, shipment=+10, failure=-5
 Does NOT replace MemoryOS — keeps both systems separate.
@@ -70,8 +71,16 @@ def run_memory(task: str, context: dict = None) -> dict:
         return _learned(task, context)
     elif action == "decision":
         return _decision(task, context)
+    elif action == "sync":
+        return _sync_to_hub(context)
     elif action == "shipment":
         return _shipment(task, context)
+    elif action == "approve":
+        return _approve_pending(context)
+    elif action == "reject":
+        return _reject_pending(context)
+    elif action == "pending":
+        return _list_pending()
     else:
         return {"status": "error", "output": f"Unknown action: '{action}'", "ci_delta": 0}
 
@@ -329,6 +338,212 @@ def _decision(task: str, context: dict) -> dict:
         }
 
 
+def _sync_to_hub(context: dict) -> dict:
+    """
+    Extract bugs and decisions from local session logs and push to hub NEUTRON_ROOT.
+    This enables cross-project knowledge sharing.
+
+    Multi-window workflow:
+      1. Work on project (local memory/YYYY-MM-DD.md accumulates)
+      2. Run: neutron sync --hub ~/.neutron-evo-os
+         → OR: neutron memory sync --hub ~/.neutron-evo-os
+         → OR: neutron sync
+      3. Bugs/decisions extracted from local logs → pushed to hub
+      4. Next session (any project) → SessionStart reads hub LEARNED.md
+    """
+    import json as _json
+    import re
+    from datetime import datetime, timedelta
+
+    hub_root = context.get("hub_root") or os.environ.get("NEUTRON_HUB_ROOT")
+    if not hub_root:
+        # Default: ~/.neutron-evo-os
+        hub_root = os.path.expanduser("~/.neutron-evo-os")
+
+    hub_path = Path(hub_root)
+    local_path = _NEUTRON_ROOT
+
+    # If hub == local, nothing to sync
+    try:
+        hub_path.resolve().relative_to(local_path.resolve())
+        same_path = True
+    except ValueError:
+        same_path = False
+
+    if same_path:
+        return {
+            "status": "skipped",
+            "output": "Hub == local NEUTRON_ROOT — nothing to sync. "
+                      "Run from a project satellite to push learnings to hub.",
+            "ci_delta": 0,
+        }
+
+    # Verify hub has memory directory
+    hub_memory = hub_path / "memory"
+    if not hub_memory.exists():
+        return {
+            "status": "error",
+            "output": f"Hub memory/ not found at {hub_path} — "
+                      f"is NEUTRON_HUB_ROOT set correctly?",
+            "ci_delta": -3,
+        }
+
+    # ── Extract STRUCTURED entries from local LEARNED.md ─────────────────────
+    # Only sync structured ## [DATE] Bug: entries — never raw log excerpts.
+    # Filter out: "From X: N log excerpt(s)" contamination, [PENDING] entries.
+    local_learned = local_path / "memory" / "LEARNED.md"
+    structured_entries = []
+    contamination_patterns = [
+        re.compile(r"From\s+\w+:\s*\d+\s+log excerpt", re.IGNORECASE),
+        re.compile(r"\[PENDING\]"),
+    ]
+    is_contaminated = lambda s: any(p.search(s) for p in contamination_patterns)
+
+    if local_learned.exists():
+        content = local_learned.read_text()
+        # Extract each structured Bug: entry (from "## [" to next "## [")
+        current = []
+        for line in content.splitlines():
+            if re.match(r"^\s*##\s+\[", line):
+                if current and not is_contaminated("\n".join(current)):
+                    structured_entries.append("\n".join(current))
+                current = []
+            if current or (re.match(r"^\s*##\s+\[", line)):
+                current.append(line)
+        # Don't forget last entry
+        if current and not is_contaminated("\n".join(current)):
+            structured_entries.append("\n".join(current))
+
+    # Also extract structured decision entries from local user_decisions.json
+    local_decisions = local_path / "memory" / "user_decisions.json"
+    synced_decisions = []
+    if local_decisions.exists():
+        try:
+            decisions = _json.loads(local_decisions.read_text())
+            if isinstance(decisions, list):
+                # Only sync applied/resolved decisions (not pending)
+                for d in decisions:
+                    if d.get("outcome") in ("applied", "resolved", "shipped"):
+                        synced_decisions.append(d)
+        except Exception:
+            pass
+
+    if not structured_entries and not synced_decisions:
+        return {
+            "status": "skipped",
+            "output": (
+                f"No structured LEARNED.md entries or applied decisions to sync. "
+                f"Hub LEARNED.md only accepts structured entries — raw log excerpts are ignored."
+            ),
+            "ci_delta": 0,
+        }
+
+    # ── Push to hub with filelock ──────────────────────────────────────────
+    hub_learned = hub_memory / "LEARNED.md"
+    hub_decisions = hub_memory / "decisions.json"
+    hub_index = hub_memory / "index.json"
+
+    today_str = datetime.now().strftime("%Y-%m-%d")
+    project_name = local_path.name
+
+    def _safe_json_write(path: Path, data: list) -> int:
+        lock_path = str(path.with_suffix(".lock"))
+        lock = filelock.FileLock(lock_path, timeout=10)
+        try:
+            with lock:
+                existing = []
+                if path.exists():
+                    try:
+                        existing = _json.loads(path.read_text())
+                        if not isinstance(existing, list):
+                            existing = []
+                    except Exception:
+                        existing = []
+                merged = existing + data
+                path.write_text(_json.dumps(merged, indent=2))
+        except filelock.Timeout:
+            raise TimeoutError(f"Lock timeout on {path.name}")
+        return len(data)
+
+    def _append_structured_learned(entries: list[str]) -> int:
+        """Append structured LEARNED entries to hub LEARNED.md (not raw text)."""
+        if not entries:
+            return 0
+        header = f"\n## [{today_str}] From {project_name}: LEARNED sync\n"
+        body = "\n".join(entries)
+        content = header + body + "\n"
+        lock_path = str(hub_learned.with_suffix(".lock"))
+        lock = filelock.FileLock(lock_path, timeout=10)
+        with lock:
+            existing = hub_learned.read_text() if hub_learned.exists() else ""
+            hub_learned.write_text(existing + content)
+        return len(entries)
+
+    def _append_decisions(decs: list[dict]) -> int:
+        if not decs:
+            return 0
+        entries = [
+            {
+                "id": 0,
+                "timestamp": datetime.now().isoformat(),
+                "decision": d.get("decision", ""),
+                "context": f"Synced from {project_name}",
+                "outcome": d.get("outcome", "applied"),
+                "_synced_from": project_name,
+            }
+            for d in decs[:20]
+        ]
+        return _safe_json_write(hub_decisions, entries)
+
+    def _update_index(entries_count: int, decisions_count: int) -> bool:
+        idx = []
+        if hub_index.exists():
+            try:
+                idx = _json.loads(hub_index.read_text())
+            except Exception:
+                idx = []
+        now = datetime.now().isoformat()
+        updated = False
+        for entry in idx:
+            if entry.get("project") == project_name:
+                entry["last_sync"] = now
+                entry["entries_synced"] = entries_count
+                entry["decisions_synced"] = decisions_count
+                updated = True
+        if not updated:
+            idx.append({
+                "project": project_name,
+                "local_root": str(local_path),
+                "last_sync": now,
+                "entries_synced": entries_count,
+                "decisions_synced": decisions_count,
+            })
+        hub_index.write_text(_json.dumps(idx, indent=2))
+        return True
+
+    entries_count = _append_structured_learned(structured_entries)
+    decisions_count = _append_decisions(synced_decisions)
+    _update_index(entries_count, decisions_count)
+
+    return {
+        "status": "synced",
+        "output": (
+            f"Synced to {hub_path.name}:\n"
+            f"  LEARNED entries: {entries_count} structured entry/entries → hub LEARNED.md\n"
+            f"  Decisions: {decisions_count} → hub decisions.json\n"
+            f"  Index updated for '{project_name}'\n"
+            f"\n"
+            f"Raw log excerpts are NOT synced — only structured entries.\n"
+            f"Next: Open any project — SessionStart reads hub LEARNED.md automatically."
+        ),
+        "entries_synced": entries_count,
+        "decisions_synced": decisions_count,
+        "hub": str(hub_path),
+        "project": project_name,
+        "ci_delta": 5,
+    }
+
+
 def _shipment(task: str, context: dict) -> dict:
     """
     Record or list shipments in memory/shipments.json.
@@ -385,3 +600,187 @@ def _shipment(task: str, context: dict) -> dict:
             "shipments": shipments[-10:],
             "ci_delta": 0,
         }
+
+
+PENDING_DIR = MEMORY_DIR / "pending"
+
+
+def _list_pending() -> dict:
+    """List pending LEARNED entries awaiting human approval."""
+    pending_path = PENDING_DIR / "LEARNED_pending.md"
+    if not pending_path.exists():
+        return {"status": "ok", "output": "No pending LEARNED entries.", "pending": [], "ci_delta": 0}
+
+    content = pending_path.read_text()
+    entries = []
+    current = []
+    for line in content.splitlines():
+        if line.startswith("## [") and "[PENDING]" in line:
+            if current:
+                entries.append("\n".join(current))
+            current = []
+        if current or (line.startswith("## [") and "[PENDING]" in line):
+            current.append(line)
+    if current:
+        entries.append("\n".join(current))
+
+    if not entries:
+        return {"status": "ok", "output": "No pending LEARNED entries.", "pending": [], "ci_delta": 0}
+
+    return {
+        "status": "ok",
+        "output": f"{len(entries)} pending LEARNED entry/entries:\n" +
+                  "\n".join(f"  • {e[:100]}" for e in entries[:5]),
+        "pending": [e[:200] for e in entries],
+        "ci_delta": 0,
+    }
+
+
+def _approve_pending(context: dict) -> dict:
+    """
+    Move a pending LEARNED entry to official LEARNED.md.
+    Usage: neutron memory approve pending-YYYYMMDD-N
+    """
+    draft_id = context.get("draft_id", "")
+    if not draft_id:
+        return {
+            "status": "error",
+            "output": "draft_id required: neutron memory approve <draft_id>",
+            "ci_delta": -3,
+        }
+
+    pending_path = PENDING_DIR / "LEARNED_pending.md"
+    learned_path = MEMORY_DIR / "LEARNED.md"
+
+    if not pending_path.exists():
+        return {"status": "error", "output": "No pending entries found.", "ci_delta": -3}
+
+    content = pending_path.read_text()
+    lines = content.splitlines()
+
+    approved_entry = None
+    kept_lines = []
+    in_target = False
+
+    for line in lines:
+        if line.startswith("## [") and "[PENDING]" in line:
+            # Start of a new entry
+            if in_target and approved_entry:
+                # Already found target, close it
+                pass
+            in_target = draft_id in line
+            if not in_target and kept_lines and kept_lines[-1].startswith("## ["):
+                # This was an old entry we want to keep
+                pass
+            if in_target:
+                # Remove [PENDING] tag and append to LEARNED.md
+                clean_line = line.replace("[PENDING]", "[APPROVED]").replace("[APPROVED]", "")
+                # Keep just the Bug: part
+                approved_entry = [clean_line]
+                continue
+            else:
+                kept_lines.append(line)
+                continue
+        if in_target:
+            if line.startswith("## [") and "[PENDING]" in line:
+                # Next entry started — close current
+                in_target = False
+                kept_lines.append("\n".join(approved_entry))
+                approved_entry = None
+            else:
+                approved_entry.append(line)
+        else:
+            kept_lines.append(line)
+
+    # Close last entry if it was target
+    if in_target and approved_entry:
+        kept_lines.append("\n".join(approved_entry))
+
+    if approved_entry is None:
+        return {
+            "status": "error",
+            "output": f"Draft '{draft_id}' not found in pending entries.",
+            "ci_delta": -3,
+        }
+
+    # Write approved entry to LEARNED.md
+    learned_content = learned_path.read_text() if learned_path.exists() else ""
+    learned_path.write_text(learned_content + "\n" + "\n".join(approved_entry) + "\n")
+
+    # Write remaining pending
+    pending_path.write_text("\n".join(kept_lines))
+
+    return {
+        "status": "approved",
+        "output": f"Entry approved and added to LEARNED.md: {draft_id}",
+        "ci_delta": 5,
+    }
+
+
+def _reject_pending(context: dict) -> dict:
+    """
+    Archive a pending LEARNED entry (not deleted, just removed from pending).
+    Usage: neutron memory reject <draft_id>
+    """
+    draft_id = context.get("draft_id", "")
+    if not draft_id:
+        return {
+            "status": "error",
+            "output": "draft_id required: neutron memory reject <draft_id>",
+            "ci_delta": 0,
+        }
+
+    pending_path = PENDING_DIR / "LEARNED_pending.md"
+    if not pending_path.exists():
+        return {"status": "error", "output": "No pending entries found.", "ci_delta": 0}
+
+    ARCHIVED_DIR.mkdir(exist_ok=True)
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+    archive_path = ARCHIVED_DIR / f"LEARNED_pending_rejected_{ts}.md"
+
+    content = pending_path.read_text()
+    lines = content.splitlines()
+
+    rejected_lines = []
+    kept_lines = []
+    in_target = False
+
+    for line in lines:
+        if line.startswith("## [") and "[PENDING]" in line:
+            if in_target:
+                # Close previous entry
+                pass
+            in_target = draft_id in line
+            if in_target:
+                rejected_lines = [line]
+                continue
+            else:
+                kept_lines.append(line)
+                continue
+        if in_target:
+            if line.startswith("## [") and "[PENDING]" in line:
+                in_target = False
+                kept_lines.append("\n".join(rejected_lines))
+                rejected_lines = [line]
+            else:
+                rejected_lines.append(line)
+        else:
+            kept_lines.append(line)
+
+    if rejected_lines:
+        archive_path.write_text("\n".join(rejected_lines))
+
+    if not rejected_lines:
+        return {
+            "status": "error",
+            "output": f"Draft '{draft_id}' not found in pending entries.",
+            "ci_delta": -3,
+        }
+
+    pending_path.write_text("\n".join(kept_lines))
+
+    return {
+        "status": "rejected",
+        "output": f"Entry rejected and archived: {draft_id}",
+        "ci_delta": 0,
+    }

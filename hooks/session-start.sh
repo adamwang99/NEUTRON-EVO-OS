@@ -145,6 +145,19 @@ if [ -n "$NEUTRON_HUB" ] && [ -d "$NEUTRON_HUB/memory" ] && [ "$NEUTRON_HUB" != 
     fi
 fi
 
+# ── Load LEARNED pending entries (AI suggestions awaiting human approval) ─────
+PENDING="$MEMORY_DIR/pending/LEARNED_pending.md"
+if [ -f "$PENDING" ]; then
+    PENDING_COUNT=$(grep -c "^\[PENDING\]" "$PENDING" 2>/dev/null || echo 0)
+    if [ "$PENDING_COUNT" -gt 0 ]; then
+        echo ""
+        echo "📋 $PENDING_COUNT pending LEARNED entry/entries — awaiting your approval"
+        echo "   neutron memory approve <draft_id>   OR   neutron memory reject <draft_id>"
+        echo "   neutron memory pending              ← list all"
+        head -12 "$PENDING" | sed 's/^/   /'
+    fi
+fi
+
 # ── Load most recent cookbook (distilled knowledge from Dream Cycle) ───────
 COOKBOOK=$(find "$MEMORY_DIR/cookbooks" -name "*.md" -type f -printf "%T@ %p\n" 2>/dev/null | sort -rn | head -1 | cut -d' ' -f2-)
 if [ -n "$COOKBOOK" ] && [ -f "$COOKBOOK" ]; then
