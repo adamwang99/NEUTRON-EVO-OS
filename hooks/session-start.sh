@@ -109,3 +109,27 @@ if [ -n "$LATEST_LOG" ]; then
         echo "$LAST_CP" | sed 's/^/   /'
     fi
 fi
+
+# ── Load LEARNED.md (bug fixes & patterns — never repeat the same mistake) ───
+LEARNED="$MEMORY_DIR/LEARNED.md"
+if [ -f "$LEARNED" ]; then
+    # Show last 3 entries only (most recent first)
+    TOTAL=$(grep -c "^## \[" "$LEARNED" 2>/dev/null || echo 0)
+    if [ "$TOTAL" -gt 0 ]; then
+        echo ""
+        echo "📚 LEARNED.md — $TOTAL bug fix(es) recorded"
+        # Print the last section block (from last "## " to end)
+        LAST_LEARNED=$(awk '/^## \[.*\] Bug: /{section=$0} section{body=section ORS $0} END{print body}' "$LEARNED" 2>/dev/null | tail -20)
+        if [ -n "$LAST_LEARNED" ]; then
+            echo "$LAST_LEARNED" | sed 's/^/   /'
+        fi
+    fi
+fi
+
+# ── Load most recent cookbook (distilled knowledge from Dream Cycle) ───────
+COOKBOOK=$(find "$MEMORY_DIR/cookbooks" -name "*.md" -type f -printf "%T@ %p\n" 2>/dev/null | sort -rn | head -1 | cut -d' ' -f2-)
+if [ -n "$COOKBOOK" ] && [ -f "$COOKBOOK" ]; then
+    echo ""
+    echo "📖 Recent cookbook: $(basename "$COOKBOOK")"
+    head -15 "$COOKBOOK" 2>/dev/null | sed 's/^/   /'
+fi

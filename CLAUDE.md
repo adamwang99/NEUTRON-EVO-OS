@@ -21,6 +21,7 @@ See `NEUTRON_CONTEXT.md` for the full system context. Additional docs:
 - `AI_CONTEXT_MASTER.md` — Project overview
 - `ARCHITECTURE.md` — System architecture
 - `MEMORY.md` — Project knowledge base
+- `memory/LEARNED.md` — **Bug fixes & patterns: read before starting any fix**
 - `engine/` — NEUTRON CLI engine implementation
 - `mcp_server/` — MCP server (stdio, SSE, HTTP, WebSocket)
 - `skills/` — Claude Code skill definitions
@@ -35,7 +36,8 @@ See `NEUTRON_CONTEXT.md` for the full system context. Additional docs:
 
 ## Known Issues & Guards
 
-- **Directory boundary**: Observer (`SilentObserver`) and GC are scoped to the active project root. Root path validation rejects parent directories and non-project paths to prevent scanning sibling projects. `stop()` requires the exact root that was used to start.
+- **Directory boundary**: Observer (`SilentObserver`) and GC are scoped to the active project root. Root path validation rejects parent directories and non-project paths to prevent scanning sibling projects. `stop()` requires the exact root that was used to start. See `memory/LEARNED.md` for full bug history.
+- **PreLoadMemory**: Not a valid Claude Code hook — do not use in settings.json. Use `SessionStart` hook with `type: "command"` to echo files.
 
 ## Forbidden
 

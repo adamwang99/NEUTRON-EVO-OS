@@ -25,7 +25,21 @@
 - ❌ Never say "is this correct?" or "do you approve?" when gates are bypassed
 - ✅ ONLY the /ship rating is always requested, even in auto-confirm mode
 
-## 🗑️ Garbage Collection
+## 🧠 Memory Retrieval (How AI Knows What Was Learned)
+
+Every new session automatically sees:
+1. `memory/LEARNED.md` — bug fixes & patterns from past sessions (shown by SessionStart hook)
+2. `memory/cookbooks/*.md` — distilled knowledge from Dream Cycle (most recent shown)
+3. `memory/discoveries/` — past project discoveries
+4. `memory/YYYY-MM-DD.md` — today's session log
+
+**Before starting any fix, search LEARNED.md:**
+```bash
+grep -i "boundary\|observer\|gc\|hook" ~/.neutron-evo-os/memory/LEARNED.md
+```
+
+**After fixing a bug, record it:**
+Add entry to `memory/LEARNED.md` using the template in that file (date, symptom, root cause, fix, tags).
 
 Disk space is protected via `neutron gc`. GC runs automatically every session start (silent).
 Manual full cleanup when needed:

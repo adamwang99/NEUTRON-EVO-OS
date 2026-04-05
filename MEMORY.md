@@ -2,24 +2,27 @@
 
 ## Memory Stack Files
 
-| File | Purpose | Priority |
-|------|---------|----------|
-| SOUL.md | Agent Identity & Constraints | 1 |
-| USER.md | User Preferences | 1 |
-| GOVERNANCE.md | Policy & Rules (from policy.json) | 1 |
-| RULES.md | Operating Procedures | 1 |
-| COORDINATION.md | Multi-Agent Workflow | 1 |
-| WORKFLOW.md | Task Distribution & Parallel Processing | 1 |
-| CH.md | Context Hub (API Docs Layer) | 1 |
-| MEMORY.md | This file - Long-term Knowledge | - |
-| HEARTBEAT.md | Session Tracker | - |
-| memory/ | Daily Logs | - |
-| Parallel/ | Multi-project Workspace | - |
-| context-hub/ | API Docs Cache | - |
-| MemoryOS/ | Full Memory OS | - |
-| .claude/agents/ | Subagents | - |
-| ULTIMATE_PROMPT.md | Agent Factory Prompt | - |
-| NEUTRON_EVO_OS.md | System Prompt for AI Agents | - |
+| File | Purpose | Status |
+|------|---------|--------|
+| SOUL.md | Agent Identity & Constraints | ✅ |
+| USER.md | User Preferences | ✅ |
+| GOVERNANCE.md | Policy & Rules | ✅ |
+| RULES.md | Operating Procedures | ✅ |
+| WORKFLOW.md | Task Distribution & Parallel Processing | ✅ |
+| MEMORY.md | This file - Long-term Knowledge | ✅ |
+| MANIFESTO.md | ∫f(t)dt philosophy | ✅ |
+| PERFORMANCE_LEDGER.md | CI tracking | ✅ |
+| START.md | Quick reference | ✅ |
+| HEARTBEAT.md | Session tracker | ✅ |
+| memory/ | Daily logs | ✅ |
+| memory/archived/ | Archived data (NEVER DELETE) | ✅ |
+| memory/cookbooks/ | Distilled knowledge | ✅ |
+| memory/LEARNED.md | Bug fixes & pattern database | ✅ |
+| memory/discoveries/ | Project discovery sessions | ✅ |
+| skills/core/ | Skill architecture | ✅ |
+| engine/ | Core engine | ✅ |
+| COORDINATION.md | Multi-Agent Workflow | ✅ |
+| HEARTBEAT.md | Session Tracker | ✅ |
 
 ---
 
@@ -27,35 +30,16 @@
 
 ```
 TRƯỚC KHI LÀM GÌ CŨNG PHẢI ĐỌC:
-1. SOUL.md         → Agent identity, forbidden actions
-2. USER.md         → User preferences
-3. GOVERNANCE.md   → Policy rules, access control
-4. RULES.md        → Operating procedures
-5. COORDINATION.md → Multi-agent workflow
-6. WORKFLOW.md     → Task distribution & parallel processing ⭐
-7. CH.md           → Context Hub usage guide
-7. MEMORY.md       → Long-term knowledge
-8. memory/YYYY-MM-DD.md → Today's context
-9. context-hub/   → API docs (on-demand via chub search)
+1. SOUL.md              → Agent identity, forbidden actions
+2. USER.md              → User preferences
+3. GOVERNANCE.md        → Policy rules, access control
+4. RULES.md             → Operating procedures
+5. WORKFLOW.md          → Task distribution & parallel processing
+6. MANIFESTO.md         → ∫f(t)dt philosophy
+7. MEMORY.md            → Long-term knowledge
+8. memory/LEARNED.md    → Past bugs fixed, patterns to avoid ← NEW SESSIONS READ THIS
+9. memory/YYYY-MM-DD.md → Today's context
 ```
-
-### Context Hub (Layer 8 - API Ground Truth)
-
-**Khi dùng external API (OpenAI, AWS, CCXT, Stripe...):**
-
-```bash
-# Option 1: Khi có context-hub
-chub search "[API provider] [function]"
-chub get [DOC_ID] --lang python
-
-# Option 2: Web search (hiện tại dùng)
-Web search: "[API provider] official documentation Python"
-```
-
-**Tại sao:**
-- Tránh hallucinate API parameters
-- Dùng đúng API version
-- Code chính xác từ ground truth
 
 ---
 
@@ -64,7 +48,8 @@ Web search: "[API provider] official documentation Python"
 ### Claude Code Integration
 - Memory stack works with Claude Code extension in VS Code
 - Use @-mentions for quick context: `@SOUL.md`, `@GOVERNANCE.md`
-- Manual read for full context
+- SessionStart hook loads NEUTRON context automatically
+- PreToolUse hook backs up files before any edit
 
 ### Workflow
 - Daily session: read today's memory file first
@@ -81,50 +66,14 @@ Web search: "[API provider] official documentation Python"
 ## Governance Integration
 
 ### From RULE for CODING
-- ✅ GOVERNANCE.md - Policy rules (from policy.json)
-- ✅ RULES.md - Operating procedures (from SYSTEM_PROMPT_BASE.txt)
-- ✅ COORDINATION.md - Multi-agent workflow (from coordination.md)
+- ✅ GOVERNANCE.md - Policy rules
+- ✅ RULES.md - Operating procedures
+- ✅ COORDINATION.md - Multi-agent workflow
 
 ### Key Rules Summary
 - **Forbidden**: Hard delete, modify production without test, skip backup
 - **Required**: Backup before modify, approval > 100 records
 - **Stop conditions**: Policy conflict, backup failure, data loss
-
----
-
-## Parallel Coding Workflow
-
-### Workspace Structure
-```
-Parallel/
-├── parallel.code-workspace     ← Open this!
-├── .vscode/settings.json
-├── project1_trading-bot/      (CCXT + TA-Lib)
-└── project2_ai-agent/        (Ollama + Memory)
-```
-
-### VS Code Shortcuts
-| Action | Shortcut |
-|--------|----------|
-| Claude Code | Ctrl+Shift+P → "Claude Code" |
-| New terminal | Ctrl+Shift+` |
-| Split editor | Ctrl+\ |
-| Multi-cursor | Alt+Click |
-| Find in files | Ctrl+Shift+F |
-
-### Parallel Task Template
-```
-TRƯỚC KHI LÀM GÌ:
-1. Đọc SOUL.md, USER.md, GOVERNANCE.md, COORDINATION.md
-
-TASK:
-- [Task 1: Trading Bot]
-- [Task 2: AI Agent]
-
-SAU XONG:
-- Log to memory/YYYY-MM-DD.md
-- Update MEMORY.md if key learnings
-```
 
 ---
 
@@ -137,77 +86,40 @@ SAU XONG:
 ---
 
 ## Reference
-- See memory/ folder for daily logs
-- See HEARTBEAT.md for session tracking
-- See Parallel/ for multi-project workspace
-- See CH.md for Context Hub integration
-- See START.md for quick reference
-- See docs/ for API documentation links
-- See templates/ for code templates
-- See WORKFLOW.md for task distribution
-- See COORDINATION.md for parallel agent coordination
-- See MemoryOS/ for full memory OS
-- See RULE for CODING/ for source governance docs
-- See .claude/agents/ for Subagents
-- See ULTIMATE_PROMPT.md for agent factory prompt
+
+| File | Purpose |
+|------|---------|
+| memory/ | Daily session logs |
+| skills/core/ | Skill implementations |
+| engine/ | Skill router, observer, dream engine |
+| .claude/ | Claude Code settings |
+| .vscode/ | VS Code workspace settings |
 
 ## Quick Start
 ```bash
 # 1. Open VS Code
-File → Open Folder → MEMORY cho Agent Coding
+File → Open Folder → ai-context-master
 
 # 2. Read START.md for quick reference
 
-# 3. Copy prompt template and start coding!
+# 3. Run: make live   (start observer)
+# 4. Run: make dream  (manual Dream Cycle)
 ```
 
 ## Auto-Apply Global Settings
 
 ### Option 1: Auto Install (Recommended)
-```powershell
-# Run PowerShell as Admin
-cd ".vscode"
-.\install-settings.ps1
+```bash
+# Run from NEUTRON repo root
+bash install-global.sh
 ```
-→ Tự động thêm settings vào VS Code
 
-### Option 2: Manual Copy
-```
-1. Ctrl+Shift+P → "Preferences: Open User Settings (JSON)"
-2. Copy nội dung từ .vscode/settings.global.json
-3. Save và restart VS Code
+### Option 2: VS Code Extension
+```bash
+code --install-extension vscode-extension/neutron-evo-os-4.1.0.vsix
 ```
 
 ### Kết quả
 - ✅ Memory Stack tự động load trong mọi dự án
 - ✅ Claude Code đọc SOUL.md, USER.md, GOVERNANCE.md...
 - ✅ Parallel tasks enabled
-
-## Memory Stack v2.1 - Full Context
-
-```
-Layer 1: SOUL.md         → Identity & constraints
-Layer 2: USER.md         → User preferences
-Layer 3: GOVERNANCE.md   → Policy rules
-Layer 4: RULES.md        → Operating procedures
-Layer 5: COORDINATION.md → Multi-agent workflow
-Layer 6: WORKFLOW.md     → Task distribution
-Layer 7: CH.md           → Context Hub (API docs)
-Layer 8: MEMORY.md       → Project knowledge
-Layer 9: memory/         → Daily logs
-Layer 10: MemoryOS/     → Full memory OS
-Layer 11: .claude/agents/ → Subagents
-Layer 12: ULTIMATE_PROMPT.md → Agent Factory
-Layer 13: MANIFESTO.md → ∫f(t)dt philosophy
-Layer 14: PERFORMANCE_LEDGER.md → CI tracking
-```
-
-**Installation:**
-```bash
-# Context Hub (API Docs)
-npm install -g chub-dev
-
-# MemoryOS (Full Memory OS)
-bun install -g github:tobi/qmd
-cd MemoryOS && memoryos init
-```
