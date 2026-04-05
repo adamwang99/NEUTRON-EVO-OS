@@ -23,6 +23,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 from datetime import datetime
 
@@ -98,8 +99,14 @@ def _write_daily_log(task: str, context: dict) -> dict:
         f"- CI delta: {ci_delta:+.0f}\n"
         f"- Notes: {_redact(context.get('notes', ''))}\n"
     )
-    content = log_path.read_text() if log_path.exists() else f"# {today}\n"
-    log_path.write_text(content + entry + "\n")
+    lock_path = str(log_path.with_suffix(".lock"))
+    lock = filelock.FileLock(lock_path, timeout=10)
+    try:
+        with lock:
+            content = log_path.read_text() if log_path.exists() else f"# {today}\n"
+            _atomic_write_md(log_path, content + entry + "\n")
+    except filelock.Timeout:
+        return {"status": "error", "output": "Lock timeout on daily log — try again", "ci_delta": -1}
     return {"status": "ok", "output": f"Logged to {log_path.name}", "ci_delta": ci_delta}
 
 
@@ -213,8 +220,7 @@ def _learned(task: str, context: dict) -> dict:
         )
 
         content = _read_or_init_learned(learned_path)
-        content += entry + "\n"
-        learned_path.write_text(content)
+        _atomic_write_md(learned_path, content + entry + "\n")
         return {"status": "added", "output": f"Entry added to LEARNED.md", "ci_delta": 5}
 
     elif sub == "search":
@@ -242,7 +248,7 @@ def _read_or_init_learned(path: Path) -> str:
     )
     if path.exists():
         return path.read_text()
-    path.write_text(header)
+    _atomic_write_md(path, header)
     return header
 
 
@@ -268,11 +274,13 @@ def _search_learned(path: Path, query: str) -> dict:
 
 def _locked_read_write(path: Path, update_fn) -> dict:
     """
-    Atomic read-modify-write using filelock + temp file.
+    Filelock + atomic write for read-modify-write cycles.
     update_fn(old_data) -> new_data (list/dict) or None to skip write.
     Always returns dict with {"status": ..., "data": ...}.
     """
     import json as _json
+    import tempfile as _tempfile
+    import os as _os
     lock_path = str(path.with_suffix(".lock"))
     lock = filelock.FileLock(lock_path, timeout=10)
     try:
@@ -280,7 +288,20 @@ def _locked_read_write(path: Path, update_fn) -> dict:
             data = [] if not path.exists() else _json.loads(path.read_text())
             result = update_fn(data)
             if result is not None:
-                path.write_text(_json.dumps(result, indent=2))
+                fd = _tempfile.NamedTemporaryFile(
+                    mode="w", dir=path.parent, delete=False, encoding="utf-8"
+                )
+                try:
+                    fd.write(_json.dumps(result, indent=2))
+                    fd.flush()
+                    _os.fsync(fd.fileno())
+                    fd.close()
+                    _os.replace(fd.name, str(path))
+                except Exception:
+                    try:
+                        _os.unlink(fd.name)
+                    except Exception:
+                        pass
             return {"status": "ok", "data": result if result is not None else data}
     except filelock.Timeout:
         return {"status": "error", "output": f"Lock timeout on {path.name} — try again", "ci_delta": -3}
@@ -447,6 +468,7 @@ def _sync_to_hub(context: dict) -> dict:
     project_name = local_path.name
 
     def _safe_json_write(path: Path, data: list) -> int:
+        """Filelock + atomic write for JSON files (crash-safe)."""
         lock_path = str(path.with_suffix(".lock"))
         lock = filelock.FileLock(lock_path, timeout=10)
         try:
@@ -460,7 +482,22 @@ def _sync_to_hub(context: dict) -> dict:
                     except Exception:
                         existing = []
                 merged = existing + data
-                path.write_text(_json.dumps(merged, indent=2))
+                # Atomic write: temp file + fsync + rename (prevents partial-write corruption)
+                import tempfile as _tempfile, os as _os
+                fd = _tempfile.NamedTemporaryFile(
+                    mode="w", dir=path.parent, delete=False, encoding="utf-8"
+                )
+                try:
+                    fd.write(_json.dumps(merged, indent=2))
+                    fd.flush()
+                    _os.fsync(fd.fileno())
+                    fd.close()
+                    _os.replace(fd.name, str(path))
+                except Exception:
+                    try:
+                        _os.unlink(fd.name)
+                    except Exception:
+                        pass
         except filelock.Timeout:
             raise TimeoutError(f"Lock timeout on {path.name}")
         return len(data)
@@ -506,7 +543,7 @@ def _sync_to_hub(context: dict) -> dict:
             header = f"\n## [{today_str}] From {project_name}: LEARNED sync\n"
             body = "\n".join(new_entries)
             content = header + body + "\n"
-            hub_learned.write_text(existing + content)
+            _atomic_write_md(hub_learned, existing + content)
 
         return len(new_entries) - skipped if skipped else len(new_entries)
 
@@ -552,7 +589,7 @@ def _sync_to_hub(context: dict) -> dict:
                     "entries_synced": entries_count,
                     "decisions_synced": decisions_count,
                 })
-            hub_index.write_text(_json.dumps(idx, indent=2))
+            _atomic_write_md(hub_index, _json.dumps(idx, indent=2))
         return True
 
     def _append_decisions(decs: list[dict]) -> int:
@@ -661,7 +698,14 @@ def _list_pending() -> dict:
     if not pending_path.exists():
         return {"status": "ok", "output": "No pending LEARNED entries.", "pending": [], "ci_delta": 0}
 
-    content = pending_path.read_text()
+    lock_path = str(pending_path.with_suffix(".lock"))
+    lock = filelock.FileLock(lock_path, timeout=10)
+    try:
+        with lock:
+            content = pending_path.read_text()
+    except filelock.Timeout:
+        return {"status": "error", "output": "Lock timeout — try again", "ci_delta": -1}
+
     entries = []
     current = []
     for line in content.splitlines():
@@ -702,64 +746,76 @@ def _approve_pending(context: dict) -> dict:
 
     pending_path = PENDING_DIR / "LEARNED_pending.md"
     learned_path = MEMORY_DIR / "LEARNED.md"
-    lock_path = PENDING_DIR / "LEARNED_pending.lock"
 
     if not pending_path.exists():
         return {"status": "error", "output": "No pending entries found.", "ci_delta": -3}
 
-    lock = filelock.FileLock(str(lock_path), timeout=10)
-    with lock:
-        content = pending_path.read_text()
-        lines = content.splitlines()
+    # Acquire BOTH locks in consistent order (pending < learned) to avoid deadlock
+    pending_lock_path = str(pending_path.with_suffix(".lock"))
+    learned_lock_path = str(learned_path.with_suffix(".lock"))
+    pending_lock = filelock.FileLock(pending_lock_path, timeout=10)
+    learned_lock = filelock.FileLock(learned_lock_path, timeout=10)
 
-        # Parse into entry blocks (each block = list of lines)
-        blocks: list[list[str]] = []
-        current: list[str] = []
-        for line in lines:
-            if line.startswith("## [") and "[PENDING]" in line:
+    try:
+        # Always acquire in path-order: pending first, then learned
+        pending_lock.acquire(timeout=10)
+        try:
+            with learned_lock:
+                content = pending_path.read_text()
+                lines = content.splitlines()
+
+                # Parse into entry blocks (each block = list of lines)
+                blocks: list[list[str]] = []
+                current: list[str] = []
+                for line in lines:
+                    if line.startswith("## [") and "[PENDING]" in line:
+                        if current:
+                            blocks.append(current)
+                        current = [line]
+                    elif current:
+                        current.append(line)
                 if current:
                     blocks.append(current)
-                current = [line]
-            elif current:
-                current.append(line)
-        if current:
-            blocks.append(current)
 
-        # Find target block by exact Draft ID
-        target_block: list[str] | None = None
-        remaining_blocks: list[list[str]] = []
-        for block in blocks:
-            block_text = "\n".join(block)
-            if f"Draft ID: {draft_id}" in block_text:
-                target_block = block
-            else:
-                remaining_blocks.append(block)
+                # Find target block by exact Draft ID
+                target_block: list[str] | None = None
+                remaining_blocks: list[list[str]] = []
+                for block in blocks:
+                    block_text = "\n".join(block)
+                    if f"Draft ID: {draft_id}" in block_text:
+                        target_block = block
+                    else:
+                        remaining_blocks.append(block)
 
-        if target_block is None:
-            return {
-                "status": "error",
-                "output": f"Draft '{draft_id}' not found in pending entries.",
-                "ci_delta": -3,
-            }
+                if target_block is None:
+                    return {
+                        "status": "error",
+                        "output": f"Draft '{draft_id}' not found in pending entries.",
+                        "ci_delta": -3,
+                    }
 
-        # Strip [PENDING] from header, keep rest of block intact
-        approved_lines = []
-        for line in target_block:
-            if "[PENDING]" in line:
-                approved_lines.append(line.replace("[PENDING]", "").replace("  ", " ").strip())
-            else:
-                approved_lines.append(line)
-        approved_text = "\n".join(approved_lines)
+                # Strip [PENDING] from header, keep rest of block intact
+                approved_lines = []
+                for line in target_block:
+                    if "[PENDING]" in line:
+                        approved_lines.append(line.replace("[PENDING]", "").replace("  ", " ").strip())
+                    else:
+                        approved_lines.append(line)
+                approved_text = "\n".join(approved_lines)
 
-        # Write approved entry to LEARNED.md (atomic)
-        existing_learned = learned_path.read_text() if learned_path.exists() else ""
-        _atomic_write_md(learned_path, existing_learned + "\n" + approved_text + "\n")
+                # Write approved entry to LEARNED.md (atomic — inside learned_lock held)
+                existing_learned = learned_path.read_text() if learned_path.exists() else ""
+                _atomic_write_md(learned_path, existing_learned + "\n" + approved_text + "\n")
 
-        # Write remaining pending back (atomic)
-        remaining_text = "\n".join(
-            line for block in remaining_blocks for line in block
-        )
-        _atomic_write_md(pending_path, remaining_text)
+                # Write remaining pending back (atomic — inside pending_lock held)
+                remaining_text = "\n".join(
+                    line for block in remaining_blocks for line in block
+                )
+                _atomic_write_md(pending_path, remaining_text)
+        finally:
+            pending_lock.release()
+    except filelock.Timeout:
+        return {"status": "error", "output": "Lock timeout — try again", "ci_delta": -1}
 
     return {
         "status": "approved",
@@ -810,46 +866,52 @@ def _reject_pending(context: dict) -> dict:
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
     archive_path = ARCHIVED_DIR / f"LEARNED_pending_rejected_{ts}.md"
 
-    content = pending_path.read_text()
-    lines = content.splitlines()
+    lock_path = str(pending_path.with_suffix(".lock"))
+    lock = filelock.FileLock(lock_path, timeout=10)
+    try:
+        with lock:
+            content = pending_path.read_text()
+            lines = content.splitlines()
 
-    rejected_lines = []
-    kept_lines = []
-    in_target = False
+            rejected_lines = []
+            kept_lines = []
+            in_target = False
 
-    for line in lines:
-        if line.startswith("## [") and "[PENDING]" in line:
-            if in_target:
-                # Close previous entry
-                pass
-            in_target = draft_id in line
-            if in_target:
-                rejected_lines = [line]
-                continue
-            else:
-                kept_lines.append(line)
-                continue
-        if in_target:
-            if line.startswith("## [") and "[PENDING]" in line:
-                in_target = False
-                kept_lines.append("\n".join(rejected_lines))
-                rejected_lines = [line]
-            else:
-                rejected_lines.append(line)
-        else:
-            kept_lines.append(line)
+            for line in lines:
+                if line.startswith("## [") and "[PENDING]" in line:
+                    if in_target:
+                        # Close previous entry
+                        pass
+                    in_target = draft_id in line
+                    if in_target:
+                        rejected_lines = [line]
+                        continue
+                    else:
+                        kept_lines.append(line)
+                        continue
+                if in_target:
+                    if line.startswith("## [") and "[PENDING]" in line:
+                        in_target = False
+                        kept_lines.append("\n".join(rejected_lines))
+                        rejected_lines = [line]
+                    else:
+                        rejected_lines.append(line)
+                else:
+                    kept_lines.append(line)
 
-    if rejected_lines:
-        archive_path.write_text("\n".join(rejected_lines))
+            if rejected_lines:
+                _atomic_write_md(archive_path, "\n".join(rejected_lines))
 
-    if not rejected_lines:
-        return {
-            "status": "error",
-            "output": f"Draft '{draft_id}' not found in pending entries.",
-            "ci_delta": -3,
-        }
+            if not rejected_lines:
+                return {
+                    "status": "error",
+                    "output": f"Draft '{draft_id}' not found in pending entries.",
+                    "ci_delta": -3,
+                }
 
-    pending_path.write_text("\n".join(kept_lines))
+            _atomic_write_md(pending_path, "\n".join(kept_lines))
+    except filelock.Timeout:
+        return {"status": "error", "output": "Lock timeout — try again", "ci_delta": -1}
 
     return {
         "status": "rejected",

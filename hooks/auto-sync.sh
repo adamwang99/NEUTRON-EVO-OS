@@ -4,7 +4,7 @@
 # Runs at every Claude Code session start.
 # Reads NEUTRON_AUTO_CONFIRM from auto_confirm.json and syncs Claude settings.
 # ─────────────────────────────────────────────────────────────────────────────
-SCRIPT_DIR="$(cd "$(dirname "{BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 NEUTRON_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 AUTO_CONFIRM_FILE="$NEUTRON_ROOT/memory/.auto_confirm.json"
 CLAUDE_SETTINGS="$HOME/.claude/settings.json"
@@ -18,17 +18,23 @@ ENABLED=$(python3 -c "import json,sys; d=json.load(open('$AUTO_CONFIRM_FILE')); 
 if [ "$ENABLED" = "1" ]; then
     # Auto-confirm is ON — ensure Claude Code settings match
     python3 - "$CLAUDE_SETTINGS" "$AUTO_CONFIRM_FILE" << 'PYEOF'
-import json, sys
+import json, sys, os
 settings_path, auto_confirm_path = sys.argv[1], sys.argv[2]
-auto_cfg = json.load(open(auto_confirm_path))
+
+# Read auto-confirm state
+with open(auto_confirm_path) as f:
+    auto_cfg = json.load(f)
 enabled = auto_cfg.get("enabled", False)
 
+# Read settings once (avoid double-open TOCTOU race)
 data = {}
-if open(settings_path).read().strip():
-    try:
-        data = json.loads(open(settings_path).read())
-    except Exception:
-        pass
+if os.path.exists(settings_path):
+    content = open(settings_path).read()
+    if content.strip():
+        try:
+            data = json.loads(content)
+        except Exception:
+            pass
 
 if enabled:
     data["permissionPromptsEnabled"] = False
@@ -49,6 +55,19 @@ else:
     if "env" in data:
         data["env"]["NEUTRON_AUTO_CONFIRM"] = "0"
 
-open(settings_path, "w").write(json.dumps(data, indent=2))
+# Atomic write to settings
+import tempfile
+fd = tempfile.NamedTemporaryFile(mode="w", dir=os.path.dirname(settings_path) or ".", delete=False)
+try:
+    fd.write(json.dumps(data, indent=2))
+    fd.flush()
+    os.fsync(fd.fileno())
+    fd.close()
+    os.replace(fd.name, settings_path)
+except Exception:
+    try:
+        os.unlink(fd.name)
+    except Exception:
+        pass
 PYEOF
 fi

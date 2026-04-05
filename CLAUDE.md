@@ -18,22 +18,19 @@
 
 See `NEUTRON_CONTEXT.md` for the full system context. Additional docs:
 
-- `AI_CONTEXT_MASTER.md` — Project overview
-- `ARCHITECTURE.md` — System architecture
-- `MEMORY.md` — Project knowledge base
 - `WORKFLOW_MEMORY.md` — Memory system: how to record & retrieve learnings
 - `memory/LEARNED.md` — **Bug fixes & patterns: read before starting any fix**
 - `engine/` — NEUTRON CLI engine implementation
 - `mcp_server/` — MCP server (stdio, SSE, HTTP, WebSocket)
 - `skills/` — Claude Code skill definitions
-- `hooks/` — Session hooks (session-start, pretool-backup, auto-sync)
+- `hooks/` — Session hooks (session-start.sh, pretool-backup.sh, auto-sync.sh, gc_lightweight.py)
 - `memory/` — Session logs and discoveries
 
 ## Key Conventions
 
 - Follow NEUTRON EVO OS workflow: `/discover → /spec → /build → /verify → /ship`
 - Auto-confirm gates controlled by `memory/.auto_confirm.json`
-- Hooks run automatically on session start
+- SessionStart hook (session-start.sh) runs automatically at session start
 
 ## Known Issues & Guards
 

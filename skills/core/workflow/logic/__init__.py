@@ -18,11 +18,14 @@ AUTO-CONFIRM: Gates can be auto-confirmed via engine.auto_confirm module.
 """
 from __future__ import annotations
 
+import filelock
 import os
 import shutil
 import subprocess
 from pathlib import Path
 from datetime import datetime
+
+from engine._atomic import atomic_write
 
 
 def _auto_confirm_check(step: str) -> bool:
@@ -87,14 +90,20 @@ def _load_gate() -> dict:
 
 
 def _save_gate(state: dict):
-    """Save workflow gate state."""
+    """Save workflow gate state atomically with filelock."""
     import json
     MEMORY_DIR.mkdir(exist_ok=True)
-    _GATE_FILE.write_text(json.dumps(state, indent=2))
+    lock = filelock.FileLock(str(_GATE_FILE.with_suffix(".lock")), timeout=10)
+    try:
+        with lock:
+            atomic_write(_GATE_FILE, json.dumps(state, indent=2))
+    except filelock.Timeout:
+        raise RuntimeError("Lock timeout on workflow gate — try again")
 
 
 def _log_milestone(step: str, task: str, notes: str = "", ci_delta: int = 0):
-    """Write a milestone log entry to today's memory."""
+    """Write a milestone log entry to today's memory atomically."""
+    import tempfile as _tempfile, os as _os
     MEMORY_DIR.mkdir(exist_ok=True)
     today = datetime.now().strftime("%Y-%m-%d")
     log_path = MEMORY_DIR / f"{today}.md"
@@ -106,8 +115,26 @@ def _log_milestone(step: str, task: str, notes: str = "", ci_delta: int = 0):
         f"- CI delta: {ci_delta:+.0f}\n"
         f"- Notes: {notes}\n"
     )
-    content = log_path.read_text() if log_path.exists() else f"# {today}\n"
-    log_path.write_text(content + entry + "\n")
+    lock = filelock.FileLock(str(log_path.with_suffix(".lock")), timeout=10)
+    try:
+        with lock:
+            content = log_path.read_text() if log_path.exists() else f"# {today}\n"
+            fd = _tempfile.NamedTemporaryFile(
+                mode="w", dir=log_path.parent, delete=False, encoding="utf-8"
+            )
+            try:
+                fd.write(content + entry + "\n")
+                fd.flush()
+                _os.fsync(fd.fileno())
+                fd.close()
+                _os.replace(fd.name, str(log_path))
+            except Exception:
+                try:
+                    _os.unlink(fd.name)
+                except Exception:
+                    pass
+    except filelock.Timeout:
+        pass  # Best-effort: log entry is supplementary, not critical
 
 
 def _step_explore(task: str, context: dict) -> dict:
@@ -217,7 +244,22 @@ def _step_spec(task: str, context: dict) -> dict:
         return result
 
     # Handle USER APPROVAL directly (debate already done)
+    # Even with explicit approval, revision limit still applies
     if context.get("approved") is True:
+        if gate.get("spec_revision_count", 0) >= 3:
+            return {
+                "status": "revision_limit_reached",
+                "output": (
+                    f"⚠️  SPEC has been revised {gate.get('spec_revision_count', 0)} time(s).\n"
+                    "Approval blocked — too many revision cycles.\n\n"
+                    "  A) ABANDON — abandon this spec and start fresh\n"
+                    "  B) FORCE APPROVE — workflow(step='spec', approved=True, _force=True)\n\n"
+                    "Recommendation: abandon and re-run /discovery for clarity."
+                ),
+                "revision_count": gate.get("spec_revision_count", 0),
+                "user_action_required": True,
+                "ci_delta": 0,
+            }
         return _record_spec_approval(True, context)
     elif context.get("approved") is False:
         return _record_spec_approval(False, context)
@@ -261,7 +303,7 @@ def _step_spec(task: str, context: dict) -> dict:
         write_result = run_spec_skill(task, {"action": "write"})
         return {
             "status": "spec_written",
-            "output": write_result["output"],
+            "output": write_result.get("output", ""),
             "spec_path": write_result.get("spec_path"),
             "revision_count": revision_count,
             "user_action_required": True,
@@ -500,14 +542,22 @@ def _step_ship(task: str, context: dict) -> dict:
             "ci_delta": 0,
         }
 
-    # Archive SPEC.md (save before deletion so we have the content)
+    # Archive SPEC.md (save before deletion — record path in gate FIRST)
     spec_path = _NEUTRON_ROOT / "SPEC.md"
-    spec_exists = spec_path.exists()
-    if spec_exists:
+    archived_spec = None
+    if spec_path.exists():
         MEMORY_DIR.mkdir(exist_ok=True)
         archived_spec = MEMORY_DIR / f"SPEC_shipped_{datetime.now().strftime('%Y%m%d_%H%M%S')}.md"
         shutil.copy2(spec_path, archived_spec)
-        spec_path.unlink()
+        try:
+            spec_path.unlink()
+        except OSError as e:
+            return {
+                "status": "error",
+                "output": f"SPEC.md archive copy succeeded but deletion failed: {e}",
+                "archived_spec": str(archived_spec),
+                "ci_delta": 0,
+            }
 
     # Present delivery summary
     summary = context.get("delivery_summary", f"Completed: {task}")
@@ -521,6 +571,15 @@ def _step_ship(task: str, context: dict) -> dict:
         outcome="shipped",
     )
     shipment_id = shipment_result.get("shipment_id")
+
+    # If shipment recording failed (no shipment_id), warn but continue
+    if shipment_id is None:
+        import sys
+        print(
+            f"[WORKFLOW] WARNING: record_shipment returned no ID — rating will NOT be saved. "
+            f"Result: {shipment_result}",
+            file=sys.stderr
+        )
 
     # If user already provided a rating in context, record it immediately
     rating = context.get("rating")
