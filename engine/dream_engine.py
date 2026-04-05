@@ -14,6 +14,7 @@ import logging
 import os
 import re
 import shutil
+import tempfile
 import threading
 from pathlib import Path
 from datetime import datetime, timedelta
@@ -37,6 +38,28 @@ MAX_COOKBOOKS = 30          # keep only N most recent cookbooks
 # the real system archived/ directory during pytest runs.
 # Tests set this via monkeypatch before calling dream_cycle().
 _IS_TEST_MODE = os.environ.get("NEUTRON_DREAM_TEST", "") == "1"
+
+
+def _atomic_write(path: Path, content: str) -> None:
+    """
+    Write content to path atomically: write to temp file → fsync → rename.
+    Prevents partial-write corruption on crash. Thread-safe.
+    """
+    tmp = tempfile.NamedTemporaryFile(
+        mode="w", dir=path.parent, delete=False, encoding="utf-8"
+    )
+    try:
+        tmp.write(content)
+        tmp.flush()
+        os.fsync(tmp.fileno())
+        tmp.close()
+        os.replace(tmp.name, str(path))
+    except Exception:
+        try:
+            os.unlink(tmp.name)
+        except Exception:
+            pass
+        raise
 MAX_PENDING_AGE_DAYS = 7    # auto-archive pending entries older than this
 
 # Re-entrancy guard: prevents concurrent dream cycles
@@ -319,19 +342,17 @@ def _write_cookbook(log_name: str, ai_result: dict, timestamp: str) -> list[str]
 def _write_learned_pending(drafts: list[dict]) -> int:
     """
     Write AI-generated LEARNED drafts to memory/pending/LEARNED_pending.md.
-    These require human approval before becoming official LEARNED entries.
+    Thread-safe: uses filelock + atomic write.
     Auto-expire: entries older than 7 days → archived/.
     """
     if not drafts:
         return 0
     PENDING_DIR.mkdir(exist_ok=True)
     pending_path = PENDING_DIR / "LEARNED_pending.md"
+    lock_path = PENDING_DIR / "LEARNED_pending.lock"
     today = datetime.now()
     today_str = today.strftime("%Y-%m-%d")
     draft_id_base = today.strftime("%Y%m%d")
-
-    # Read existing content
-    existing = pending_path.read_text() if pending_path.exists() else ""
 
     entries = []
     for i, draft in enumerate(drafts, 1):
@@ -348,53 +369,62 @@ def _write_learned_pending(drafts: list[dict]) -> int:
         )
         entries.append(entry)
 
-    pending_path.write_text(existing + "\n".join(entries))
+    import filelock
+    lock = filelock.FileLock(str(lock_path), timeout=10)
+    with lock:
+        existing = pending_path.read_text() if pending_path.exists() else ""
+        _atomic_write(pending_path, existing + "\n".join(entries))
     return len(drafts)
 
 
 def _prune_expired_pending() -> int:
     """
     Remove pending entries older than MAX_PENDING_AGE_DAYS (auto-archive, not delete).
+    Thread-safe: uses filelock + atomic write.
     Returns count of entries pruned.
     """
     if not PENDING_DIR.exists():
         return 0
     pending_path = PENDING_DIR / "LEARNED_pending.md"
+    lock_path = PENDING_DIR / "LEARNED_pending.lock"
     if not pending_path.exists():
         return 0
 
     ARCHIVED_DIR.mkdir(exist_ok=True)
-    content = pending_path.read_text()
-    lines = content.splitlines()
-    cutoff = datetime.now() - timedelta(days=MAX_PENDING_AGE_DAYS)
-    kept = []
-    expired = []
+    import filelock
+    lock = filelock.FileLock(str(lock_path), timeout=10)
+    with lock:
+        content = pending_path.read_text()
+        lines = content.splitlines()
+        cutoff = datetime.now() - timedelta(days=MAX_PENDING_AGE_DAYS)
+        kept = []
+        expired = []
 
-    for i, line in enumerate(lines):
-        if line.startswith("## ["):
-            # Extract date from "## [YYYY-MM-DD]"
-            m = re.search(r"\[(\d{4}-\d{2}-\d{2})\]", line)
-            if m:
-                try:
-                    entry_date = datetime.strptime(m.group(1), "%Y-%m-%d")
-                    if entry_date < cutoff:
-                        # This entry is expired — collect all its lines
-                        j = i
-                        while j < len(lines) and not (j > i and lines[j].startswith("## [")):
-                            j += 1
-                        expired.append("\n".join(lines[i:j]))
-                        continue
-                except ValueError:
-                    pass
-        kept.append(line)
+        for i, line in enumerate(lines):
+            if line.startswith("## ["):
+                # Extract date from "## [YYYY-MM-DD]"
+                m = re.search(r"\[(\d{4}-\d{2}-\d{2})\]", line)
+                if m:
+                    try:
+                        entry_date = datetime.strptime(m.group(1), "%Y-%m-%d")
+                        if entry_date < cutoff:
+                            # Collect all lines of this entry
+                            j = i
+                            while j < len(lines) and not (j > i and lines[j].startswith("## [")):
+                                j += 1
+                            expired.append("\n".join(lines[i:j]))
+                            continue
+                    except ValueError:
+                        pass
+            kept.append(line)
 
-    if expired:
-        # Archive expired entries
-        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-        archive_path = ARCHIVED_DIR / f"LEARNED_pending_expired_{ts}.md"
-        archive_path.write_text("\n".join(expired))
-        pending_path.write_text("\n".join(kept))
-        logger.info(f"Dream Cycle: archived {len(expired)} expired LEARNED pending entries")
+        if expired:
+            # Archive expired entries (not critical — no filelock needed)
+            ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+            archive_path = ARCHIVED_DIR / f"LEARNED_pending_expired_{ts}.md"
+            _atomic_write(archive_path, "\n".join(expired))
+            _atomic_write(pending_path, "\n".join(kept))
+            logger.info(f"Dream Cycle: archived {len(expired)} expired LEARNED pending entries")
 
     return len(expired)
 

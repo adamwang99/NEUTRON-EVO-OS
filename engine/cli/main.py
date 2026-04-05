@@ -35,7 +35,7 @@ import json
 import shutil
 import sys
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 # Ensure NEUTRON_ROOT is set and repo root in path
@@ -629,7 +629,7 @@ def cmd_gc(args: argparse.Namespace) -> int:
     # 5. Large unused files
     if args.large:
         print(f"  📁 Large files (>{args.large}MB) not in git:")
-        for f in _NEUTRON_ROOT.rglob("*"):
+        for f in _NEUTRON_ROOT.rglob("*"):  # default: does NOT follow symlinks
             if not f.is_file():
                 continue
             try:

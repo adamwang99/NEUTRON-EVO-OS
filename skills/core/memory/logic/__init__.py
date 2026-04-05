@@ -466,18 +466,49 @@ def _sync_to_hub(context: dict) -> dict:
         return len(data)
 
     def _append_structured_learned(entries: list[str]) -> int:
-        """Append structured LEARNED entries to hub LEARNED.md (not raw text)."""
+        """
+        Append structured LEARNED entries to hub LEARNED.md (not raw text).
+        Deduplicates by bug title to prevent hub LEARNED.md from growing with
+        repeated sync runs of the same entry.
+        """
         if not entries:
             return 0
-        header = f"\n## [{today_str}] From {project_name}: LEARNED sync\n"
-        body = "\n".join(entries)
-        content = header + body + "\n"
+
         lock_path = str(hub_learned.with_suffix(".lock"))
         lock = filelock.FileLock(lock_path, timeout=10)
         with lock:
             existing = hub_learned.read_text() if hub_learned.exists() else ""
+
+            # Extract existing bug titles for dedup
+            existing_titles: set[str] = set()
+            for line in existing.splitlines():
+                m = re.search(r"Bug:\s*(.+?)(?:\n|$)", line, re.IGNORECASE)
+                if m:
+                    existing_titles.add(m.group(1).strip().lower())
+
+            # Filter out duplicates
+            new_entries = []
+            skipped = 0
+            for entry in entries:
+                # Extract title from entry
+                m = re.search(r"Bug:\s*(.+?)(?:\n|$)", entry, re.IGNORECASE)
+                if m:
+                    title = m.group(1).strip().lower()
+                    if title in existing_titles:
+                        skipped += 1
+                        continue
+                    existing_titles.add(title)
+                new_entries.append(entry)
+
+            if not new_entries:
+                return 0
+
+            header = f"\n## [{today_str}] From {project_name}: LEARNED sync\n"
+            body = "\n".join(new_entries)
+            content = header + body + "\n"
             hub_learned.write_text(existing + content)
-        return len(entries)
+
+        return len(new_entries) - skipped if skipped else len(new_entries)
 
     def _append_decisions(decs: list[dict]) -> int:
         if not decs:
@@ -639,6 +670,7 @@ def _list_pending() -> dict:
 def _approve_pending(context: dict) -> dict:
     """
     Move a pending LEARNED entry to official LEARNED.md.
+    Thread-safe: filelock + atomic write for both files.
     Usage: neutron memory approve pending-YYYYMMDD-N
     """
     draft_id = context.get("draft_id", "")
@@ -651,70 +683,91 @@ def _approve_pending(context: dict) -> dict:
 
     pending_path = PENDING_DIR / "LEARNED_pending.md"
     learned_path = MEMORY_DIR / "LEARNED.md"
+    lock_path = PENDING_DIR / "LEARNED_pending.lock"
 
     if not pending_path.exists():
         return {"status": "error", "output": "No pending entries found.", "ci_delta": -3}
 
-    content = pending_path.read_text()
-    lines = content.splitlines()
+    lock = filelock.FileLock(str(lock_path), timeout=10)
+    with lock:
+        content = pending_path.read_text()
+        lines = content.splitlines()
 
-    approved_entry = None
-    kept_lines = []
-    in_target = False
-
-    for line in lines:
-        if line.startswith("## [") and "[PENDING]" in line:
-            # Start of a new entry
-            if in_target and approved_entry:
-                # Already found target, close it
-                pass
-            in_target = draft_id in line
-            if not in_target and kept_lines and kept_lines[-1].startswith("## ["):
-                # This was an old entry we want to keep
-                pass
-            if in_target:
-                # Remove [PENDING] tag and append to LEARNED.md
-                clean_line = line.replace("[PENDING]", "[APPROVED]").replace("[APPROVED]", "")
-                # Keep just the Bug: part
-                approved_entry = [clean_line]
-                continue
-            else:
-                kept_lines.append(line)
-                continue
-        if in_target:
+        # Parse into entry blocks (each block = list of lines)
+        blocks: list[list[str]] = []
+        current: list[str] = []
+        for line in lines:
             if line.startswith("## [") and "[PENDING]" in line:
-                # Next entry started — close current
-                in_target = False
-                kept_lines.append("\n".join(approved_entry))
-                approved_entry = None
+                if current:
+                    blocks.append(current)
+                current = [line]
+            elif current:
+                current.append(line)
+        if current:
+            blocks.append(current)
+
+        # Find target block by exact Draft ID
+        target_block: list[str] | None = None
+        remaining_blocks: list[list[str]] = []
+        for block in blocks:
+            block_text = "\n".join(block)
+            if f"Draft ID: {draft_id}" in block_text:
+                target_block = block
             else:
-                approved_entry.append(line)
-        else:
-            kept_lines.append(line)
+                remaining_blocks.append(block)
 
-    # Close last entry if it was target
-    if in_target and approved_entry:
-        kept_lines.append("\n".join(approved_entry))
+        if target_block is None:
+            return {
+                "status": "error",
+                "output": f"Draft '{draft_id}' not found in pending entries.",
+                "ci_delta": -3,
+            }
 
-    if approved_entry is None:
-        return {
-            "status": "error",
-            "output": f"Draft '{draft_id}' not found in pending entries.",
-            "ci_delta": -3,
-        }
+        # Strip [PENDING] from header, keep rest of block intact
+        approved_lines = []
+        for line in target_block:
+            if "[PENDING]" in line:
+                approved_lines.append(line.replace("[PENDING]", "").replace("  ", " ").strip())
+            else:
+                approved_lines.append(line)
+        approved_text = "\n".join(approved_lines)
 
-    # Write approved entry to LEARNED.md
-    learned_content = learned_path.read_text() if learned_path.exists() else ""
-    learned_path.write_text(learned_content + "\n" + "\n".join(approved_entry) + "\n")
+        # Write approved entry to LEARNED.md (atomic)
+        existing_learned = learned_path.read_text() if learned_path.exists() else ""
+        _atomic_write_md(learned_path, existing_learned + "\n" + approved_text + "\n")
 
-    # Write remaining pending
-    pending_path.write_text("\n".join(kept_lines))
+        # Write remaining pending back (atomic)
+        remaining_text = "\n".join(
+            line for block in remaining_blocks for line in block
+        )
+        _atomic_write_md(pending_path, remaining_text)
 
     return {
         "status": "approved",
         "output": f"Entry approved and added to LEARNED.md: {draft_id}",
         "ci_delta": 5,
     }
+
+
+def _atomic_write_md(path: Path, content: str) -> None:
+    """Atomic write: temp file + fsync + rename. Prevents partial-write corruption."""
+    import os as _os
+    import tempfile as _tempfile
+    fd = _tempfile.NamedTemporaryFile(
+        mode="w", dir=path.parent, delete=False, encoding="utf-8"
+    )
+    try:
+        fd.write(content)
+        fd.flush()
+        _os.fsync(fd.fileno())
+        fd.close()
+        _os.replace(fd.name, str(path))
+    except Exception:
+        try:
+            _os.unlink(fd.name)
+        except Exception:
+            pass
+        raise
 
 
 def _reject_pending(context: dict) -> dict:
