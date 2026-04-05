@@ -101,3 +101,17 @@ When you fix a bug or discover a pattern:
 
 *Last updated: 2026-04-05*
 *Auto-archived from: memory/YYYY-MM-DD.md sessions*
+
+## [2026-04-05] Bug: Decisions from trading-bot mixed into NEUTRON project
+
+- **Symptom:** memory/user_decisions.json had 2 pending decisions about
+  trading-bot (SPEC approved, Python+Binance) that were pending for 5 days,
+  but NEUTRON EVO OS doesn't build trading bots.
+- **Root cause:** A previous session recorded decisions without scoping
+  them to the correct NEUTRON_ROOT. Decisions from project A ended up
+  in project B's memory/ file.
+- **Fix:** Archived misplaced decisions to memory/archived/decisions_misplaced_*.json,
+  reset user_decisions.json to []. Decisions now scoped per project by MEMORY_DIR.
+- **Tags:** #boundary #memory #scope
+- **Lesson:** Decisions must be scoped to the correct project root. Each project
+  should have its own memory/ directory with its own user_decisions.json.
