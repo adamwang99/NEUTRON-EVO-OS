@@ -1,57 +1,39 @@
-# NEUTRON EVO OS — Global Context
+# AI Context Master — NEUTRON EVO OS
 
-## 🚨 MANDATORY FIRST STEP
+> Internal project: NEUTRON EVO OS source code itself.
 
-**BEFORE doing ANYTHING else (before greeting, before asking questions):**
+## Stack
 
-```
-1. Read /home/adam/.neutron-evo-os/memory/.auto_confirm.json
-2. IF {"enabled": true}:
-   - discovery=true  → SKIP ALL interview questions
-                        → Write DISCOVERY.md using user's prompt directly
-                        → Go to /spec
-   - spec=true       → After writing SPEC.md → do NOT show USER REVIEW gate
-                        → AUTO-APPROVE, go to /build
-   - acceptance=true → After /build → do NOT show USER TEST gate
-                        → AUTO-PASS, go to /ship
-   - ALWAYS: only /ship rating is requested from user
-3. IF {"enabled": false} OR file not found → normal flow
-```
+- Python (CLI engine, MCP server)
+- Node.js (integrations)
+- Claude API
 
-**🚫 FORBIDDEN — ABSOLUTE RULES, NO EXCEPTIONS:**
-- ❌ Never ask ANY discovery question when `discovery=true` is active
-- ❌ Never show SPEC USER REVIEW gate when `spec=true` is active
-- ❌ Never show ACCEPTANCE TEST gate when `acceptance=true` is active
-- ❌ Never say "is this correct?" or "do you approve?" when gates are bypassed
-- ✅ ONLY the /ship rating is always requested, even in auto-confirm mode
+## Commands
 
-## 🗑️ Garbage Collection
+- MCP server: `python3 -m mcp_server --transport http --port 3100`
+- Run tests: `pytest`
+- GC cleanup: `neutron gc --pycache --tests --data-json`
 
-Disk space is protected via `neutron gc`. GC runs automatically every session start (silent).
-Manual full cleanup when needed:
+## Local Docs
 
-```bash
-neutron gc                              # dry-run: preview what would be deleted
-neutron gc --data-json                  # delete test/agent dump files
-neutron gc --pycache                    # delete __pycache__ and *.pyc
-neutron gc --tests                     # delete pytest cache
-neutron gc --pycache --tests --data-json  # full cleanup (most common)
-neutron gc --retention 3               # archived/ retention: 3 days
-neutron gc --large 50                  # delete files > 50MB outside git
-neutron gc --empty                     # remove empty directories
-```
+See `NEUTRON_CONTEXT.md` for the full system context. Additional docs:
 
-GC runs automatically on every Claude Code session start (silent, no output).
-Use `neutron gc --dry-run` to preview before running.
+- `AI_CONTEXT_MASTER.md` — Project overview
+- `ARCHITECTURE.md` — System architecture
+- `MEMORY.md` — Project knowledge base
+- `engine/` — NEUTRON CLI engine implementation
+- `mcp_server/` — MCP server (stdio, SSE, HTTP, WebSocket)
+- `skills/` — Claude Code skill definitions
+- `hooks/` — Session hooks (session-start, pretool-backup, auto-sync)
+- `memory/` — Session logs and discoveries
 
-## ⚡ Quick Reference
+## Key Conventions
 
-| Task | Command |
-|------|---------|
-| Auto-confirm ON | `neutron auto full` |
-| Auto-confirm OFF | `neutron auto disable` |
-| System status | `neutron status` |
-| Version info | `neutron version` |
-| Garbage collection | `neutron gc --pycache --tests --data-json` |
-| Backup before upgrade | `neutron protect --dry-run` |
-| Run Dream Cycle | `neutron dream` |
+- Follow NEUTRON EVO OS workflow: `/discover → /spec → /build → /verify → /ship`
+- Auto-confirm gates controlled by `memory/.auto_confirm.json`
+- Hooks run automatically on session start
+
+## Forbidden
+
+- Never commit sensitive files (.env, credentials.json)
+- Never skip hooks (--no-verify, --no-gpg-sign)

@@ -202,8 +202,10 @@ def _write_execution_log(skill_name: str, task: str, result: dict):
         f"- Notes: {output}\n"
     )
 
-    # Atomic write: hold lock for the full read+write to prevent concurrent corruption
-    with FileLock(str(lock_path), timeout=10):
+    # Atomic write: hold lock for the full read+write to prevent concurrent corruption.
+    # The lock file name matches the log file name so FileLock serializes writes to the same log.
+    log_lock_path = log_path.with_suffix(".lock")
+    with FileLock(str(log_lock_path), timeout=10):
         if log_path.exists():
             try:
                 existing = log_path.read_text(errors="replace")

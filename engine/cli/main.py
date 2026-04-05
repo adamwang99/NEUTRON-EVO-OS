@@ -35,7 +35,7 @@ import json
 import shutil
 import sys
 import os
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
 
 # Ensure NEUTRON_ROOT is set and repo root in path
@@ -51,6 +51,7 @@ from engine import auto_confirm
 from engine.rating import summarize as rating_summarize
 from engine.user_decisions import summarize as decisions_summarize
 from engine import __version__ as NEUTRON_VERSION
+from engine.platform_sync import get_platform_status, format_sync_results
 
 
 # ─── Formatters ────────────────────────────────────────────────────────────────
@@ -273,6 +274,43 @@ def cmd_auto(args: argparse.Namespace) -> int:
         print(f"  SPEC:        {'AUTO-APPROVE' if gates['spec'] else 'REQUIRED'}")
         print(f"  Acceptance:   {'AUTO-PASS' if gates['acceptance'] else 'REQUIRED'}")
         print(f"Notes: {gates['notes']}")
+
+        # Show platform sync status
+        print(_header("PLATFORM STATUS"))
+        try:
+            pstatus = get_platform_status()
+            for plat, info in pstatus.get("platforms", {}).items():
+                pp = info.get("permissionPromptsEnabled")
+                aa = info.get("autoApprove")
+                neu = info.get("env_NEUTRON_AUTO_CONFIRM", "")
+                if pp is not None:
+                    icon = "🔓" if not pp else "🔴"
+                    print(f"  {icon} {plat}: permissionPromptsEnabled={pp}, autoApprove={aa}, NEUTRON_AUTO_CONFIRM={neu}")
+                else:
+                    count = info.get("count", 0)
+                    icon = "⬜" if count == 0 else "🟡"
+                    paths = info.get("paths", [])
+                    print(f"  {icon} {plat}: {count} config file(s) found")
+                    for p in paths:
+                        print(f"       → {p}")
+        except Exception as e:
+            print(f"  ⚠️  Could not read platform status: {e}")
+
+        return 0
+
+    if mode == "platforms":
+        print(_header("PLATFORM SYNC STATUS"))
+        try:
+            from engine.platform_sync import sync_all, disable_all
+            if args.enable_platforms:
+                result = sync_all(enabled=True)
+            elif args.disable_platforms:
+                result = disable_all()
+            else:
+                result = sync_all(enabled=auto_confirm.is_enabled())
+            print(format_sync_results(result))
+        except Exception as e:
+            print(f"❌ Platform sync error: {e}")
         return 0
 
     # Set mode
@@ -769,8 +807,12 @@ Examples:
     p = sub.add_parser("auto", help="Auto-confirm control")
     p.add_argument("mode", nargs="?", default="status",
                    choices=["full", "spec_only", "acceptance_only", "spec_and_acceptance",
-                            "discovery_only", "disable", "toggle", "status"])
+                            "discovery_only", "disable", "toggle", "status", "platforms"])
     p.add_argument("--notes", dest="notes", help="Notes for audit trail")
+    p.add_argument("--platforms", dest="enable_platforms", action="store_true",
+                   help="Force sync platforms (enable mode)")
+    p.add_argument("--platforms-restore", dest="disable_platforms", action="store_true",
+                   help="Force restore platforms (disable mode)")
     p.set_defaults(func=cmd_auto)
 
     # checkpoint

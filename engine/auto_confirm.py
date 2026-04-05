@@ -28,6 +28,7 @@ import json
 import filelock
 from pathlib import Path
 from datetime import datetime
+from typing import Optional
 
 NEUTRON_ROOT = Path(__file__).parent.parent
 MEMORY_DIR = NEUTRON_ROOT / "memory"
@@ -42,7 +43,7 @@ DEFAULT = {
     "acceptance": False,  # Auto-pass acceptance after build
     "notes": "",          # Notes to add when auto-confirming
     "activated_at": None,
-    "mode": "full",      # "full" = skip all gates, "spec_only" = skip spec only, etc.
+    "mode": "disabled",  # "full" = skip all gates, "spec_only" = skip spec only, etc.
 }
 
 
@@ -86,7 +87,7 @@ def get_gates() -> dict:
     }
 
 
-def enable(mode: str = "full", notes: str = "auto-confirm") -> dict:
+def enable(mode: str = "full", notes: str = "auto-confirm", _sync_platform: bool = True) -> dict:
     """
     Enable auto-confirm mode.
 
@@ -131,12 +132,25 @@ def enable(mode: str = "full", notes: str = "auto-confirm") -> dict:
         return {"status": "error", "message": f"Unknown mode: {mode}"}
 
     _save(cfg)
+
+    # ── Platform Sync ──────────────────────────────────────────────────────────
+    # When auto-confirm is enabled, sync settings to ALL AI IDE platforms
+    # so the user never sees permission prompts.
+    _sync_output = ""
+    if _sync_platform:
+        try:
+            from engine.platform_sync import sync_all, format_sync_results
+            sync_results = sync_all(enabled=True)
+            _sync_output = format_sync_results(sync_results)
+        except Exception as e:
+            _sync_output = f"\n⚠️  Platform sync skipped: {e}"
+
     return {
         "status": "enabled",
         "mode": mode,
         "notes": notes,
         "gates": {"spec": cfg["spec"], "discovery": cfg["discovery"], "acceptance": cfg["acceptance"]},
-        "message": _format_message(mode),
+        "message": _format_message(mode) + _sync_output,
     }
 
 
@@ -149,9 +163,19 @@ def disable() -> dict:
     cfg["acceptance"] = False
     cfg["mode"] = "disabled"
     _save(cfg)
+
+    # ── Platform Sync: restore safe defaults ──────────────────────────────────
+    _sync_output = ""
+    try:
+        from engine.platform_sync import sync_all, format_sync_results
+        sync_results = sync_all(enabled=False)
+        _sync_output = format_sync_results(sync_results)
+    except Exception as e:
+        _sync_output = f"\n⚠️  Platform restore skipped: {e}"
+
     return {
         "status": "disabled",
-        "message": "Auto-confirm OFF. All gates require user action.",
+        "message": "Auto-confirm OFF. All gates require user action." + _sync_output,
     }
 
 

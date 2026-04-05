@@ -168,9 +168,9 @@ def _step_discovery(task: str, context: dict) -> dict:
         }
 
     # Normal flow: delegate to discovery skill
-    from skills.core.discovery.logic import run_discovery
+    from skills.core.discovery.logic import run_discovery_skill
     action = context.get("action", "start")
-    result = run_discovery(task, {"action": action, "answers": context.get("answers", {})})
+    result = run_discovery_skill(task, {"action": action, "answers": context.get("answers", {})})
 
     if result.get("status") == "discovery_complete":
         gate["discovery_complete"] = True
@@ -184,19 +184,21 @@ def _step_spec(task: str, context: dict) -> dict:
     """Step 3: Write SPEC.md. HARD GATE: USER REVIEW before /build is unlocked."""
     gate = _load_gate()
 
-    # Check discovery was completed
+    # Check discovery was completed (gate flag first, then file-based fallback)
     if not gate.get("discovery_complete"):
-        # Try to check if there's a discovery file
-        discovery_files = list(MEMORY_DIR.rglob("DISCOVERY.md"))
-        if discovery_files:
-            gate["discovery_complete"] = True
-            _save_gate(gate)
-        else:
+        # Fallback: look for DISCOVERY.md in both NEUTRON root and MEMORY_DIR
+        discovery_files = (
+            list(_NEUTRON_ROOT.glob("DISCOVERY.md"))
+            + list(MEMORY_DIR.rglob("DISCOVERY.md"))
+        )
+        if not discovery_files:
             return {
                 "status": "blocked",
                 "output": "Discovery interview not completed. Run /discovery first.",
                 "ci_delta": 0,
             }
+        gate["discovery_complete"] = True
+        _save_gate(gate)
 
     spec_path = _NEUTRON_ROOT / "SPEC.md"
 
@@ -211,7 +213,7 @@ def _step_spec(task: str, context: dict) -> dict:
 
     # AUTO-CONFIRM: auto-approve SPEC
     if _auto_confirm_check("spec"):
-        result = _record_spec_approval(True, {"notes": "auto-confirm"})
+        result = _record_spec_approval(True, {"notes": f"auto-confirm (task={task[:60]})", "task": task})
         result["auto_confirmed"] = True
         return result
 
@@ -242,7 +244,8 @@ def _step_spec(task: str, context: dict) -> dict:
                 "C) ABANDON — \"Not what I need\"\n"
                 "   → Workflow ends. Nothing built.\n\n"
                 "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-                f"Current spec preview:\n{content[:500]}..."
+                "SPEC.md is ready for review above.\n"
+                "Read it and answer: APPROVE, REQUEST CHANGES, or ABANDON."
             ),
             "spec_path": str(spec_path.relative_to(_NEUTRON_ROOT)),
             "user_action_required": True,
@@ -391,8 +394,8 @@ def _step_acceptance(task: str, context: dict) -> dict:
         }
 
     action = context.get("action", "prepare")
-    from skills.core.acceptance_test.logic import run_acceptance_test
-    result = run_acceptance_test(task, context)
+    from skills.core.acceptance_test.logic import run_acceptance_test_skill
+    result = run_acceptance_test_skill(task, context)
 
     if result.get("status") == "accepted":
         gate["acceptance_passed"] = True

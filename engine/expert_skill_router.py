@@ -99,7 +99,7 @@ def route_task(task: str, context: dict = None) -> dict:
         "checkpoint":["checkpoint", "checkpointing", "handoff", "resume", "state save"],
         "discovery": ["discovery", "interview", "clarify", "questions", "understand",
                       "what i need", "what do you want", "requirements", "user story",
-                      "discover", "clarifying", "ask questions", "/discovery"],
+                      "clarifying", "ask questions", "/discovery"],
         "acceptance_test": ["acceptance", "test", "verify", "user test", "acceptance test",
                            "/acceptance", "run it", "does it work", "user verification"],
     }
