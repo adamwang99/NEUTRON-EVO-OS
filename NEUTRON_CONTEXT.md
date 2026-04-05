@@ -32,6 +32,7 @@ Every new session automatically sees:
 2. `memory/cookbooks/*.md` — distilled knowledge from Dream Cycle (most recent shown)
 3. `memory/discoveries/` — past project discoveries
 4. `memory/YYYY-MM-DD.md` — today's session log
+5. Full reference: `WORKFLOW_MEMORY.md` (memory system workflow)
 
 **Before starting any fix, search LEARNED.md:**
 ```bash

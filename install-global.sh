@@ -342,17 +342,11 @@ if [ -d "$PROJECTS_DIR" ]; then
             fi
         done
 
-        # Update .claude/settings.json to ensure PreLoadMemory loads ALL 9 context files
-        CLAUDE_SETTINGS="$project_dir/.claude/settings.json"
-        if [ -f "$CLAUDE_SETTINGS" ]; then
-            # Check if PreLoadMemory exists and has fewer than 7 files
-            if grep -q "PreLoadMemory" "$CLAUDE_SETTINGS"; then
-                FILE_COUNT=$(grep -o '"PreLoadMemory"' "$CLAUDE_SETTINGS" | wc -l || echo "0")
-                if [ "$FILE_COUNT" -eq 0 ] 2>/dev/null; then
-                    echo "    ${YELLOW}~${RESET} PreLoadMemory needs update (see OCTA notes)"
-                fi
-            else
-                echo "    ${YELLOW}~${RESET} .claude/settings.json: consider adding PreLoadMemory hook"
+        # Copy WORKFLOW_MEMORY.md (memory system workflow) to project if not present
+        if [ ! -f "$project_dir/WORKFLOW_MEMORY.md" ]; then
+            if [ -f "$NEUTRON_HOME/WORKFLOW_MEMORY.md" ]; then
+                cp "$NEUTRON_HOME/WORKFLOW_MEMORY.md" "$project_dir/WORKFLOW_MEMORY.md"
+                echo "    ${GREEN}+${RESET} Added: WORKFLOW_MEMORY.md"
             fi
         fi
 
@@ -421,7 +415,7 @@ echo ""
 echo -e "${BOLD}How it works:${RESET}"
 echo "  1. Claude Code starts → reads ~/.claude/CLAUDE.md"
 echo "  2. SessionStart hook → loads NEUTRON_ROOT context"
-echo "  3. Project CLAUDE.md → PreLoadMemory loads ALL 9 context files"
+echo "  3. Project CLAUDE.md + WORKFLOW_MEMORY.md → Full context available"
 echo "  4. Every workspace → Full NEUTRON EVO OS context available"
 echo "  5. /explore → /spec → /build → /verify → /ship"
 echo ""
