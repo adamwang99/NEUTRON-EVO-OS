@@ -16,14 +16,18 @@ import json
 import os
 import re
 import shutil
+import filelock
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional
+
+from engine._atomic import atomic_write
 
 NEUTRON_ROOT = Path(os.environ.get("NEUTRON_ROOT", Path(__file__).parent.parent))
 LEARNED_DIR = NEUTRON_ROOT / "skills" / "learned"
 MEMORY_DIR = NEUTRON_ROOT / "memory"
 INVOCATION_LOG = MEMORY_DIR / ".learned_invocations.json"
+INVOCATION_LOCK = MEMORY_DIR / ".learned_invocations.lock"
 
 # ─── Invocation tracking ─────────────────────────────────────────────────────────
 
@@ -37,9 +41,11 @@ def _load_invocations() -> dict:
 
 
 def _save_invocations(data: dict):
-    """Atomic write of invocation log."""
+    """Save invocation log atomically (filelock + fsync + rename)."""
     MEMORY_DIR.mkdir(exist_ok=True)
-    INVOCATION_LOG.write_text(json.dumps(data, indent=2))
+    lock = filelock.FileLock(str(INVOCATION_LOCK), timeout=10)
+    with lock:
+        atomic_write(INVOCATION_LOG, json.dumps(data, indent=2))
 
 
 def _record_invocation(skill_name: str):

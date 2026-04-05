@@ -1,0 +1,422 @@
+{
+  "categories": [
+    {
+      "id": "auth",
+      "name": "Authentication & Authorization",
+      "description": "Identity, session, and access control patterns",
+      "icon": "🔐",
+      "patterns": [
+        {
+          "name": "JWT Stateless Auth",
+          "aliases": ["jwt", "token auth", "stateless auth", " bearer token"],
+          "stack": ["python", "javascript", "node", "go", "rust"],
+          "use_cases": ["api auth", "microservices", "stateless backend", "mobile api"],
+          "complexity": "medium",
+          "description": "Self-contained tokens with signature verification. No server-side session storage.",
+          "implementation": {
+            "python_fastapi": {
+              "snippet": "from fastapi import Depends, HTTPException\nfrom fastapi.security import HTTPBearer\nimport jwt\n\nsecurity = HTTPBearer()\n\nasync def verify_token(token: str = Depends(security)):\n    try:\n        payload = jwt.decode(token, SECRET, algorithms=['HS256'])\n        return payload\n    except jwt.ExpiredSignatureError:\n        raise HTTPException(401, 'Token expired')\n    except jwt.InvalidTokenError:\n        raise HTTPException(401, 'Invalid token')",
+              "install": "pip install pyjwt python-jose"
+            },
+            "javascript_express": {
+              "snippet": "const jwt = require('jsonwebtoken');\n\nfunction authMiddleware(req, res, next) {\n  const token = req.headers.authorization?.split(' ')[1];\n  if (!token) return res.status(401).json({ error: 'No token' });\n  try {\n    req.user = jwt.verify(token, process.env.JWT_SECRET);\n    next();\n  } catch (e) {\n    res.status(401).json({ error: 'Invalid token' });\n  }\n}",
+              "install": "npm install jsonwebtoken"
+            }
+          },
+          "tradeoffs": "Token revocation is hard (requires blocklist). Short expiry + refresh token solves this.",
+          "when": "APIs, microservices, SPAs, mobile backends",
+          "dont_when": "Session-heavy apps needing instant revoke, legacy session-based apps"
+        },
+        {
+          "name": "Session-Based Auth (Redis-backed)",
+          "aliases": ["session", "redis session", "express-session", "flask-session"],
+          "stack": ["python", "javascript", "node"],
+          "use_cases": ["web app", "session server", "real-time", "ssr"],
+          "complexity": "medium",
+          "description": "Server-side sessions stored in Redis. Fast, instantly revocable, requires cookie support.",
+          "implementation": {
+            "python_fastapi": {
+              "snippet": "from fastapi import APIRouter, Depends, Request\nfrom itsdangerous import Signer\nimport redis\n\nrouter = APIRouter()\nr = redis.Redis()\n\n@router.post('/login')\nasync def login(request: Request):\n    session_id = r.incr('session_counter')\n    r.setex(f'session:{session_id}', 3600, user_id)\n    response.set_cookie('session', session_id, httponly=True)\n    return {'ok': True}",
+              "install": "pip install redis itsdangerous"
+            }
+          },
+          "tradeoffs": "Instant revocation + fast. Requires Redis. Session data per request overhead.",
+          "when": "Apps needing instant logout, SSR apps, real-time apps",
+          "dont_when": "Pure API (no browser), microservices (use JWT)"
+        },
+        {
+          "name": "OAuth 2.0 + PKCE",
+          "aliases": ["oauth", "oauth2", "social login", "google oauth", "github oauth"],
+          "stack": ["python", "javascript", "node"],
+          "use_cases": ["social auth", "third party login", "SSO", "delegated auth"],
+          "complexity": "high",
+          "description": "Industry-standard delegated auth. PKCE for public clients (mobile, SPA).",
+          "implementation": {
+            "python_fastapi": {
+              "snippet": "# 1. Generate PKCE challenge\nimport hashlib, base64, secrets\ncode_verifier = secrets.token_urlsafe(64)\ncode_challenge = base64.urlsafe_b64encode(\n    hashlib.sha256(code_verifier.encode()).digest()\n).decode().rstrip('=')\n\n# 2. Redirect to provider\n# GET https://provider.com/oauth/authorize?client_id=...&code_challenge=...\n\n# 3. Exchange code for token\nimport requests\nresp = requests.post(provider_token_url, data={\n    'grant_type': 'authorization_code',\n    'code': auth_code,\n    'code_verifier': code_verifier,\n    'client_id': CLIENT_ID,\n})\ntoken = resp.json()['access_token']",
+              "install": "pip install authlib"
+            }
+          },
+          "tradeoffs": "Industry standard, supports many providers. Complex to implement correctly.",
+          "when": "Social login, third-party integrations, enterprise SSO",
+          "dont_when": "Simple internal apps (use local auth), mobile-first (complex)"
+        },
+        {
+          "name": "Role-Based Access Control (RBAC)",
+          "aliases": ["rbac", "role", "permission", "access control", "authorization"],
+          "stack": ["python", "javascript", "any"],
+          "use_cases": ["multi-user", "admin", "permissions", "tenant"],
+          "complexity": "medium",
+          "description": "Users have roles (admin, editor, viewer). Roles have permissions. Check permissions on each action.",
+          "implementation": {
+            "python_fastapi": {
+              "snippet": "from functools import wraps\nfrom fastapi import HTTPException\n\nPERMISSIONS = {\n    'admin': {'read', 'write', 'delete', 'manage_users'},\n    'editor': {'read', 'write'},\n    'viewer': {'read'},\n}\n\ndef require(permission):\n    def decorator(fn):\n        @wraps(fn)\n        async def wrapper(user=Depends(get_current_user), *args, **kwargs):\n            user_role = user.get('role', 'viewer')\n            if permission not in PERMISSIONS.get(user_role, set()):\n                raise HTTPException(403, 'Forbidden')\n            return await fn(*args, **kwargs)\n        return wrapper\n    return decorator\n\n# Usage:\n@app.delete('/users/{id}')\n@require('manage_users')\nasync def delete_user(id): ...",
+              "install": "pip install python-jose"
+            }
+          },
+          "tradeoffs": "Simple, fast. Fine-grained permission (ABAC) adds complexity.",
+          "when": "Multi-user apps with distinct roles, admin panels",
+          "dont_when": "Granular per-resource permissions (use ABAC instead)"
+        }
+      ]
+    },
+    {
+      "id": "api",
+      "name": "API Design",
+      "description": "REST, versioning, error handling, and API contracts",
+      "icon": "🌐",
+      "patterns": [
+        {
+          "name": "RESTful API Design",
+          "aliases": ["rest", "rest api", "restful", "api endpoint", "api design"],
+          "stack": ["python", "javascript", "go", "any"],
+          "use_cases": ["api backend", "crud api", "resource api"],
+          "complexity": "low",
+          "description": "Resource-oriented API. Nouns in URL, HTTP verbs for actions. Predictable, well-understood.",
+          "implementation": {
+            "python_fastapi": {
+              "snippet": "from fastapi import APIRouter, HTTPException, status\n\nrouter = APIRouter(prefix='/api/v1', tags=['items'])\n\nITEMS = {}  # Replace with DB\n\n@router.get('/items', status_code=status.HTTP_200_OK)\nasync def list_items(skip: int = 0, limit: int = 100):\n    return list(ITEMS.values())[skip:skip+limit]\n\n@router.post('/items', status_code=status.HTTP_201_CREATED)\nasync def create_item(item: ItemCreate):\n    id = len(ITEMS) + 1\n    ITEMS[id] = {\"id\": id, **item.model_dump()}\n    return ITEMS[id]\n\n@router.get('/items/{item_id}', status_code=status.HTTP_200_OK)\nasync def get_item(item_id: int):\n    if item_id not in ITEMS:\n        raise HTTPException(status.HTTP_404_NOT_FOUND, 'Item not found')\n    return ITEMS[item_id]\n\n@router.delete('/items/{item_id}', status_code=status.HTTP_204_NO_CONTENT)\nasync def delete_item(item_id: int):\n    ITEMS.pop(item_id, None)",
+              "install": "pip install fastapi uvicorn pydantic"
+            }
+          },
+          "tradeoffs": "Simple, well-known. Complex actions (search, batch) need non-RESTful workarounds.",
+          "when": "CRUD APIs, resource-based systems, public APIs",
+          "dont_when": "Action-heavy APIs (use RPC), event-driven systems"
+        },
+        {
+          "name": "Error Response Standard",
+          "aliases": ["error handling", "api error", "error response", "exception"],
+          "stack": ["python", "javascript", "go", "any"],
+          "use_cases": ["api", "error handling", "validation"],
+          "complexity": "low",
+          "description": "Consistent error format across all API endpoints. Machine-readable + human-friendly.",
+          "implementation": {
+            "python_fastapi": {
+              "snippet": "from fastapi import Request\nfrom fastapi.responses import JSONResponse\n\nclass APIError(Exception):\n    def __init__(self, code: str, message: str, details=None, status=400):\n        self.code = code\n        self.message = message\n        self.details = details\n        self.status = status\n\nasync def api_error_handler(request: Request, exc: APIError):\n    return JSONResponse(\n        status_code=exc.status,\n        content={\n            'error': {\n                'code': exc.code,\n                'message': exc.message,\n                'details': exc.details,\n                'request_id': request.headers.get('X-Request-ID'),\n            }\n        }\n    )\n\n# Usage:\n# raise APIError('ITEM_NOT_FOUND', 'Item with id=3 not found', status=404)",
+              "install": "pip install fastapi"
+            }
+          },
+          "tradeoffs": "Consistent, debuggable. Needs discipline to use everywhere.",
+          "when": "Any production API",
+          "dont_when": "Internal prototypes, simple scripts"
+        },
+        {
+          "name": "Rate Limiting (Token Bucket)",
+          "aliases": ["rate limit", "throttle", "quota", "rate limiting"],
+          "stack": ["python", "javascript", "node", "nginx"],
+          "use_cases": ["api", "public api", "ddos protection", "fair use"],
+          "complexity": "medium",
+          "description": "Limit requests per user/IP using token bucket algorithm. Redis-backed for distributed.",
+          "implementation": {
+            "python_fastapi": {
+              "snippet": "import time\nfrom functools import wraps\n\nclass TokenBucket:\n    def __init__(self, rate: float, capacity: int):\n        self.rate = rate  # tokens per second\n        self.capacity = capacity\n        self.tokens = capacity\n        self.last_update = time.time()\n\n    def consume(self, tokens=1) -> bool:\n        now = time.time()\n        elapsed = now - self.last_update\n        self.tokens = min(self.capacity, self.tokens + elapsed * self.rate)\n        self.last_update = now\n        if self.tokens >= tokens:\n            self.tokens -= tokens\n            return True\n        return False\n\nbuckets = {}  # {user_id: TokenBucket}\n\ndef rate_limit(requests_per_minute: int):\n    rate = requests_per_minute / 60.0\n    def decorator(fn):\n        @wraps(fn)\n        async def wrapper(user=Depends(get_current_user), *args, **kwargs):\n            uid = user['id']\n            if uid not in buckets:\n                buckets[uid] = TokenBucket(rate, requests_per_minute)\n            if not buckets[uid].consume():\n                raise HTTPException(429, 'Rate limit exceeded')\n            return await fn(*args, **kwargs)\n        return wrapper\n    return decorator",
+              "install": "pip install slowapi  # fastapi rate limiting"
+            }
+          },
+          "tradeoffs": "Fair throttling. Redis needed for distributed. In-memory is single-node only.",
+          "when": "Public APIs, multi-tenant apps, resource-intensive endpoints",
+          "dont_when": "Internal tools with trusted users, simple single-instance apps"
+        }
+      ]
+    },
+    {
+      "id": "database",
+      "name": "Database & ORM",
+      "description": "Schema design, migrations, query patterns, and ORM best practices",
+      "icon": "🗄️",
+      "patterns": [
+        {
+          "name": "Schema Migration Pattern",
+          "aliases": ["migration", "alembic", "flyway", "migrate", "schema migration"],
+          "stack": ["python", "javascript", "go"],
+          "use_cases": ["database", "schema", "production db", "version control"],
+          "complexity": "medium",
+          "description": "Track schema changes as versioned migration files. Apply forward and backward.",
+          "implementation": {
+            "python": {
+              "snippet": "# migrations/001_create_users.py\nfrom alembic import op\nimport sqlalchemy as sa\n\nrevision = '001'\ndown_revision = None\n\ndef upgrade():\n    op.create_table('users',\n        sa.Column('id', sa.Integer(), primary_key=True),\n        sa.Column('email', sa.String(255), unique=True, nullable=False),\n        sa.Column('password_hash', sa.String(255), nullable=False),\n        sa.Column('created_at', sa.DateTime(), server_default=sa.func.now()),\n    )\n    op.create_index('ix_users_email', 'users', ['email'])\n\ndef downgrade():\n    op.drop_index('ix_users_email', 'users')\n    op.drop_table('users')\n\n# Run: alembic upgrade head\n# Rollback: alembic downgrade -1",
+              "install": "pip install alembic sqlalchemy"
+            }
+          },
+          "tradeoffs": "Safe production changes. Migration conflicts in team require coordination.",
+          "when": "Any production database, team development",
+          "dont_when": "Simple scripts, read-only databases, prototypes"
+        },
+        {
+          "name": "Repository Pattern + ORM",
+          "aliases": ["repository", "dao", "data access", "orm", "sqlalchemy"],
+          "stack": ["python"],
+          "use_cases": ["database", "backend", "clean architecture", "testable"],
+          "complexity": "medium",
+          "description": "Abstract data access behind repository interfaces. Testable without real DB.",
+          "implementation": {
+            "python": {
+              "snippet": "from abc import ABC, abstractmethod\nfrom typing import Optional\n\nclass UserRepository(ABC):\n    @abstractmethod\n    def get_by_id(self, id: int) -> Optional[User]: pass\n\n    @abstractmethod\n    def get_by_email(self, email: str) -> Optional[User]: pass\n\n    @abstractmethod\n    def save(self, user: User) -> User: pass\n\nclass SQLAlchemyUserRepository(UserRepository):\n    def __init__(self, session):\n        self.session = session\n\n    def get_by_id(self, id: int) -> Optional[User]:\n        return self.session.query(User).filter(User.id == id).first()\n\n    def get_by_email(self, email: str) -> Optional[User]:\n        return self.session.query(User).filter(User.email == email).first()\n\n# In tests — mock the repository:\nclass MockUserRepository(UserRepository):\n    def __init__(self):\n        self.users = {}\n\n    def get_by_id(self, id): return self.users.get(id)\n\n# business logic depends on UserRepository, not SQLAlchemy directly",
+              "install": "pip install sqlalchemy"
+            }
+          },
+          "tradeoffs": "Testable, clean separation. Adds abstraction layer.",
+          "when": "Medium-to-large backends, test-driven development",
+          "dont_when": "Simple CRUD, prototypes, ORMs used directly is fine"
+        }
+      ]
+    },
+    {
+      "id": "realtime",
+      "name": "Real-time & Async",
+      "description": "WebSockets, SSE, task queues, and event-driven patterns",
+      "icon": "⚡",
+      "patterns": [
+        {
+          "name": "WebSocket Communication",
+          "aliases": ["websocket", "ws", "realtime", "live", "socket.io"],
+          "stack": ["python", "javascript", "node"],
+          "use_cases": ["realtime", "live update", "chat", "notification"],
+          "complexity": "medium",
+          "description": "Bidirectional persistent connection. Server pushes events to client without polling.",
+          "implementation": {
+            "python_fastapi": {
+              "snippet": "from fastapi import WebSocket, WebSocketDisconnect\nfrom typing import List\n\nclass ConnectionManager:\n    def __init__(self):\n        self.active: List[WebSocket] = []\n\n    async def connect(self, ws: WebSocket):\n        await ws.accept()\n        self.active.append(ws)\n\n    def disconnect(self, ws: WebSocket):\n        self.active.remove(ws)\n\n    async def broadcast(self, message: dict):\n        for ws in self.active:\n            await ws.send_json(message)\n\nmanager = ConnectionManager()\n\n@router.websocket('/ws/{user_id}')\nasync def websocket_endpoint(ws: WebSocket, user_id: int):\n    await manager.connect(ws)\n    try:\n        while True:\n            data = await ws.receive_text()\n            await manager.broadcast({'from': user_id, 'msg': data})\n    except WebSocketDisconnect:\n        manager.disconnect(ws)\n        await manager.broadcast({'from': user_id, 'msg': 'disconnected'})",
+              "install": "pip install fastapi uvicorn websockets"
+            }
+          },
+          "tradeoffs": "True bidirectional. Requires sticky sessions in load-balanced environments.",
+          "when": "Chat, live dashboards, collaborative editing, game servers",
+          "dont_when": "Simple request-response, one-way notifications (use SSE instead)"
+        },
+        {
+          "name": "Background Job Queue (Celery/Redis)",
+          "aliases": ["background job", "queue", "celery", "task queue", "async task"],
+          "stack": ["python"],
+          "use_cases": ["async task", "email", "webhook", "heavy computation"],
+          "complexity": "medium",
+          "description": "Offload heavy or slow work to background workers. API returns immediately.",
+          "implementation": {
+            "python": {
+              "snippet": "from celery import Celery\n\ncelery = Celery('tasks', broker='redis://localhost:6379/0')\n\n@celery.task(name='tasks.send_email')\ndef send_email(to: str, subject: str, body: str):\n    # Heavy email sending logic\n    print(f'Sending email to {to}: {subject}')\n    return {'sent': True, 'to': to}\n\n# In API endpoint:\n@router.post('/register')\nasync def register(data: RegisterData):\n    user = await create_user(data)\n    # Queue email — returns immediately\n    send_email.delay(user.email, 'Welcome!', 'Thanks for joining...')\n    return {'user_id': user.id, 'status': 'created'}\n\n# Run worker: celery -A tasks worker --loglevel=info",
+              "install": "pip install celery redis"
+            }
+          },
+          "tradeoffs": "Decouples slow work from request. Needs Redis/broker. Retry logic required.",
+          "when": "Email sending, webhooks, heavy computation, report generation",
+          "dont_when": "Fast tasks (<100ms), simple in-process async (use asyncio)"
+        },
+        {
+          "name": "Server-Sent Events (SSE)",
+          "aliases": ["sse", "server sent events", "one-way streaming", "push"],
+          "stack": ["python", "javascript", "node"],
+          "use_cases": ["notification feed", "progress update", "one-way realtime"],
+          "complexity": "low",
+          "description": "Server pushes events to client over HTTP. Simpler than WebSocket for one-way streams.",
+          "implementation": {
+            "python_fastapi": {
+              "snippet": "from fastapi import APIRouter\nfrom fastapi.responses import StreamingResponse\nimport asyncio, json, time\n\nrouter = APIRouter()\n\n@router.get('/events/{user_id}')\nasync def sse_stream(user_id: int):\n    async def event_generator():\n        while True:\n            # Check for new events\n            event = await check_notifications(user_id)\n            if event:\n                yield f'data: {json.dumps(event)}\\n\\n'\n            await asyncio.sleep(2)  # Poll every 2 seconds\n\n    return StreamingResponse(\n        event_generator(),\n        media_type='text/event-stream',\n        headers={'Cache-Control': 'no-cache', 'Connection': 'keep-alive'}\n    )\n\n# Client (JavaScript):\n# const es = new EventSource('/api/events/123');\n# es.onmessage = (e) => console.log(JSON.parse(e.data));",
+              "install": "pip install fastapi uvicorn"
+            }
+          },
+          "tradeoffs": "Simple HTTP, works through proxies. One-way only, no binary data.",
+          "when": "Notification feeds, progress bars, live logs, one-way dashboards",
+          "dont_when": "Bidirectional needs, binary data, high-frequency updates (use WebSocket)"
+        }
+      ]
+    },
+    {
+      "id": "file",
+      "name": "File Handling & Storage",
+      "description": "Upload, validation, cloud storage, and CDN patterns",
+      "icon": "📁",
+      "patterns": [
+        {
+          "name": "Secure File Upload",
+          "aliases": ["upload", "file upload", "multipart", "storage", "s3"],
+          "stack": ["python", "javascript"],
+          "use_cases": ["file upload", "image", "document", "media", "s3"],
+          "complexity": "medium",
+          "description": "Validate size/type, generate secure filenames, store outside web root or in cloud.",
+          "implementation": {
+            "python_fastapi": {
+              "snippet": "from fastapi import UploadFile, File, HTTPException\nimport hashlib, mimetypes, os\n\nMAX_SIZE = 10 * 1024 * 1024  # 10MB\nALLOWED_TYPES = {'image/jpeg', 'image/png', 'image/webp', 'application/pdf'}\n\n@router.post('/upload')\nasync def upload(file: UploadFile = File(...)):\n    # 1. Size check\n    content = await file.read()\n    if len(content) > MAX_SIZE:\n        raise HTTPException(400, f'File too large (max {MAX_SIZE // 1024 // 1024}MB)')\n\n    # 2. Type check\n    if file.content_type not in ALLOWED_TYPES:\n        raise HTTPException(400, f'Type not allowed: {file.content_type}')\n\n    # 3. Secure filename\n    ext = mimetypes.guess_extension(file.content_type) or '.bin'\n    safe_name = hashlib.sha256(content[:256]).hexdigest()[:16] + ext\n\n    # 4. Store (local or S3)\n    path = f'/uploads/{safe_name}'\n    with open(path, 'wb') as f:\n        f.write(content)\n\n    return {'url': f'/uploads/{safe_name}', 'size': len(content)}",
+              "install": "pip install python-multipart"
+            }
+          },
+          "tradeoffs": "Simple, works well. Cloud storage (S3/GCS) better for production scale.",
+          "when": "User uploads, images, documents, any file storage",
+          "dont_when": "Large files (use presigned S3 URLs), streaming (use chunked upload)"
+        },
+        {
+          "name": "Presigned URL Upload (S3/GCS)",
+          "aliases": ["s3 upload", "presigned", "direct upload", "cloud storage"],
+          "stack": ["python", "javascript"],
+          "use_cases": ["large file", "s3", "cloud storage", "direct upload"],
+          "complexity": "medium",
+          "description": "Generate short-lived upload URL. Client uploads directly to S3 — bypasses your server.",
+          "implementation": {
+            "python_boto3": {
+              "snippet": "import boto3, uuid\n\ns3 = boto3.client('s3',\n    aws_access_key_id=AWS_KEY,\n    aws_secret_access_key=AWS_SECRET,\n    region_name='us-east-1'\n)\n\n@router.post('/upload-url')\nasync def get_upload_url(filename: str, content_type: str):\n    ext = filename.split('.')[-1]\n    key = f'uploads/{uuid.uuid4()}.{ext}'\n\n    url = s3.generate_presigned_url(\n        'put_object',\n        Params={'Bucket': BUCKET, 'Key': key, 'ContentType': content_type},\n        ExpiresIn=300  # 5 minutes\n    )\n    return {'upload_url': url, 'key': key}\n\n# Frontend uploads directly to S3 using the presigned URL",
+              "install": "pip install boto3"
+            }
+          },
+          "tradeoffs": "Offloads bandwidth from your server. Requires cloud credentials setup.",
+          "when": "Large files, high-volume uploads, user-generated media",
+          "dont_when": "Small files, simple prototypes, no cloud budget"
+        }
+      ]
+    },
+    {
+      "id": "resilience",
+      "name": "Resilience & Reliability",
+      "description": "Retry, circuit breaker, graceful degradation patterns",
+      "icon": "🛡️",
+      "patterns": [
+        {
+          "name": "Circuit Breaker",
+          "aliases": ["circuit breaker", "resilience", "fallback", "bulkhead"],
+          "stack": ["python", "javascript", "go"],
+          "use_cases": ["external api", "fault tolerance", "cascade failure"],
+          "complexity": "medium",
+          "description": "After N failures, stop calling a failing service. Give it time to recover.",
+          "implementation": {
+            "python": {
+              "snippet": "import time, functools\nfrom enum import Enum\n\nclass CircuitState(Enum):\n    CLOSED = 'closed'   # Normal\n    OPEN = 'open'       # Failing, reject immediately\n    HALF_OPEN = 'half_open'  # Testing recovery\n\nclass CircuitBreaker:\n    def __init__(self, failure_threshold=5, timeout=60):\n        self.failure_threshold = failure_threshold\n        self.timeout = timeout\n        self.failures = 0\n        self.last_failure_time = None\n        self.state = CircuitState.CLOSED\n\n    def call(self, fn, *args, **kwargs):\n        if self.state == CircuitState.OPEN:\n            if time.time() - self.last_failure_time > self.timeout:\n                self.state = CircuitState.HALF_OPEN\n            else:\n                raise Exception('Circuit OPEN — request rejected')\n\n        try:\n            result = fn(*args, **kwargs)\n            self._on_success()\n            return result\n        except Exception as e:\n            self._on_failure()\n            raise e\n\n    def _on_success(self):\n        self.failures = 0\n        self.state = CircuitState.CLOSED\n\n    def _on_failure(self):\n        self.failures += 1\n        self.last_failure_time = time.time()\n        if self.failures >= self.failure_threshold:\n            self.state = CircuitState.OPEN",
+              "install": "pip install pybreaker"
+            }
+          },
+          "tradeoffs": "Prevents cascade failures. False positives (brief outage → open circuit).",
+          "when": "External API calls, microservices, any unreliable dependency",
+          "dont_when": "Local calls, fully reliable internal services"
+        },
+        {
+          "name": "Retry with Exponential Backoff",
+          "aliases": ["retry", "backoff", "transient failure", "retries"],
+          "stack": ["python", "javascript", "go", "any"],
+          "use_cases": ["api call", "network failure", "transient error"],
+          "complexity": "low",
+          "description": "Retry failed requests with increasing delay. Skip retryable vs non-retryable errors.",
+          "implementation": {
+            "python": {
+              "snippet": "import time, random\n\ndef retry(max_attempts=3, base_delay=1.0, max_delay=30.0, jitter=True):\n    def decorator(fn):\n        def wrapper(*args, **kwargs):\n            for attempt in range(max_attempts):\n                try:\n                    return fn(*args, **kwargs)\n                except RetryableError as e:\n                    if attempt == max_attempts - 1:\n                        raise\n                    delay = min(base_delay * (2 ** attempt), max_delay)\n                    if jitter:\n                        delay += random.uniform(0, delay * 0.1)\n                    print(f'Retry {attempt+1}/{max_attempts} after {delay:.1f}s: {e}')\n                    time.sleep(delay)\n        return wrapper\n    return decorator\n\nclass RetryableError(Exception): pass\n\n@retry(max_attempts=3, base_delay=2.0)\ndef call_api(endpoint):\n    resp = requests.get(endpoint)\n    if resp.status_code == 429:\n        raise RetryableError('Rate limited')\n    if resp.status_code >= 500:\n        raise RetryableError('Server error')\n    return resp.json()",
+              "install": "pip install tenacity"
+            }
+          },
+          "tradeoffs": "Handles transient failures well. Can mask real problems if overused.",
+          "when": "External API calls, database operations, network-dependent code",
+          "dont_when": "Non-idempotent writes (use circuit breaker instead), user-facing waits"
+        }
+      ]
+    },
+    {
+      "id": "observability",
+      "name": "Observability & Logging",
+      "description": "Structured logging, metrics, tracing, and debugging patterns",
+      "icon": "📊",
+      "patterns": [
+        {
+          "name": "Structured JSON Logging",
+          "aliases": ["logging", "structured log", "json log", "log aggregation"],
+          "stack": ["python", "javascript", "go"],
+          "use_cases": ["production log", "log aggregation", "observability"],
+          "complexity": "low",
+          "description": "Machine-readable JSON logs. Queryable, aggregatable. Integrates with ELK/Datadog.",
+          "implementation": {
+            "python": {
+              "snippet": "import logging, json, sys\nfrom datetime import datetime\n\nclass JSONFormatter(logging.Formatter):\n    def format(self, record):\n        log_data = {\n            'timestamp': datetime.utcnow().isoformat() + 'Z',\n            'level': record.levelname,\n            'logger': record.name,\n            'message': record.getMessage(),\n            'module': record.module,\n            'function': record.funcName,\n            'line': record.lineno,\n        }\n        if record.exc_info:\n            log_data['exception'] = self.formatException(record.exc_info)\n        if hasattr(record, 'user_id'):\n            log_data['user_id'] = record.user_id\n        if hasattr(record, 'request_id'):\n            log_data['request_id'] = record.request_id\n        return json.dumps(log_data)\n\nhandler = logging.StreamHandler(sys.stdout)\nhandler.setFormatter(JSONFormatter())\nlogger = logging.getLogger('api')\nlogger.addHandler(handler)\nlogger.setLevel(logging.INFO)\n\n# Usage: logger.info('User logged in', extra={'user_id': 123, 'request_id': 'abc'})\n# Output: {\"timestamp\": \"2026-04-05T10:30:00Z\", \"level\": \"INFO\", \"message\": \"User logged in\", \"user_id\": 123}",
+              "install": "pip install python-json-logger"
+            }
+          },
+          "tradeoffs": "Queryable, integrates with log systems. Slightly more storage than plain text.",
+          "when": "Production systems, any system needing log aggregation",
+          "dont_when": "Development only, simple scripts, low-volume personal projects"
+        },
+        {
+          "name": "Distributed Request Tracing",
+          "aliases": ["tracing", "request id", "correlation id", "trace id"],
+          "stack": ["python", "javascript", "go"],
+          "use_cases": ["microservices", "debugging", "latency analysis"],
+          "complexity": "medium",
+          "description": "Attach unique trace_id to every request. Propagate through all services.",
+          "implementation": {
+            "python_fastapi": {
+              "snippet": "from fastapi import Request, Response\nfrom contextvars import ContextVar\nimport uuid, time\n\ntrace_id: ContextVar[str] = ContextVar('trace_id', default='')\n\n@app.middleware('http')\nasync def tracing_middleware(request: Request, call_next):\n    trace = request.headers.get('X-Trace-ID') or str(uuid.uuid4())\n    trace_id.set(trace)\n    start = time.time()\n\n    response = await call_next(request)\n    duration = time.time() - start\n\n    # Log with trace context\n    logger.info(\n        f'{request.method} {request.url.path}',\n        extra={\n            'trace_id': trace,\n            'duration_ms': round(duration * 1000, 2),\n            'status': response.status_code,\n            'user_id': getattr(request.state, 'user_id', None),\n        }\n    )\n    response.headers['X-Trace-ID'] = trace\n    return response\n\n# In any function — just access the trace:\ndef get_trace_id():\n    return trace_id.get()",
+              "install": "pip install opentelemetry-api  # for more advanced tracing"
+            }
+          },
+          "tradeoffs": "End-to-end visibility. Overhead for high-volume systems (use sampling).",
+          "when": "Microservices, complex request flows, debugging production issues",
+          "dont_when": "Monolith, simple request flows, low-overhead requirements"
+        }
+      ]
+    }
+  ],
+
+  "decision_rules": [
+    {
+      "rule": "stack_first",
+      "description": "Primary filter: if a pattern doesn't support the tech stack, score 0"
+    },
+    {
+      "rule": "auth_required",
+      "keywords": ["auth", "login", "register", "user", "account", "password", "jwt"],
+      "top_patterns": ["JWT Stateless Auth", "Session-Based Auth (Redis-backed)", "OAuth 2.0 + PKCE", "Role-Based Access Control (RBAC)"]
+    },
+    {
+      "rule": "api_heavy",
+      "keywords": ["api", "rest", "endpoint", "crud", "backend"],
+      "top_patterns": ["RESTful API Design", "Error Response Standard", "Rate Limiting (Token Bucket)", "JWT Stateless Auth"]
+    },
+    {
+      "rule": "realtime_needed",
+      "keywords": ["realtime", "live", "websocket", "chat", "notification", "push"],
+      "top_patterns": ["WebSocket Communication", "Server-Sent Events (SSE)", "Background Job Queue (Celery/Redis)"]
+    },
+    {
+      "rule": "file_handling",
+      "keywords": ["upload", "file", "image", "media", "document", "storage"],
+      "top_patterns": ["Secure File Upload", "Presigned URL Upload (S3/GCS)"]
+    },
+    {
+      "rule": "observability",
+      "keywords": ["log", "debug", "monitor", "trace", "observe", "production"],
+      "top_patterns": ["Structured JSON Logging", "Distributed Request Tracing"]
+    },
+    {
+      "rule": "external_api",
+      "keywords": ["external api", "third party", "integration", "payment", "webhook"],
+      "top_patterns": ["Retry with Exponential Backoff", "Circuit Breaker", "JWT Stateless Auth"]
+    },
+    {
+      "rule": "resilience",
+      "keywords": ["fault tolerance", "reliability", "resilient", "retry", "fallback"],
+      "top_patterns": ["Circuit Breaker", "Retry with Exponential Backoff"]
+    },
+    {
+      "rule": "database_heavy",
+      "keywords": ["database", "schema", "migration", "model", "orm", "sql"],
+      "top_patterns": ["Schema Migration Pattern", "Repository Pattern + ORM"]
+    },
+    {
+      "rule": "background_work",
+      "keywords": ["background", "queue", "async", "celery", "task", "job", "email"],
+      "top_patterns": ["Background Job Queue (Celery/Redis)", "Server-Sent Events (SSE)"]
+    }
+  ]
+}

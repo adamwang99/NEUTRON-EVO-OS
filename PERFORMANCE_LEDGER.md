@@ -1,7 +1,7 @@
 # NEUTRON-EVO-OS: Performance Ledger
 
 > ∫f(t)dt — Functional Credibility Over Institutional Inertia
-> Last Updated: 2026-03-31
+> Last Updated: 2026-04-05
 
 ---
 
@@ -42,6 +42,7 @@ Every delivery gets rated 1-5 by the user.
 | Rework Cycles | 0 |
 | Average Rating | — |
 | Avg Time-to-Ship | — |
+| Active Skills | 11 | ⭐ |
 
 ---
 
@@ -58,6 +59,10 @@ Every delivery gets rated 1-5 by the user.
 | checkpoint | 50 | — |
 | discovery | 50 | — |
 | acceptance_test | 50 | — |
+| spec | 50 | 2026-04-05 | ⭐ NEW |
+| orchestration | 50 | 2026-04-05 | ⭐ NEW |
+| feature_library | 50 | 2026-04-05 | ⭐ NEW |
+| ui_library | 50 | — |
 | learned | 35 | — |
 
 | CI Range | Status |

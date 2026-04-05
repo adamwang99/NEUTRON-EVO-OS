@@ -3,7 +3,7 @@ name: workflow
 type: core
 version: 2.0.0
 CI: 50
-dependencies: [context, memory, engine, discovery, acceptance_test]
+dependencies: [context, memory, engine, discovery, spec, acceptance_test]
 last_dream: null
 ---
 
@@ -91,70 +91,60 @@ ITERATE (if acceptance failed) or DONE
 
 ---
 
-## Step 3: /spec
+## Step 3: /spec — Adversarial SPEC Debate
 
-**Goal**: Define exactly what will be built — in writing, for user approval.
+**Goal**: Before building, conduct a 3-round adversarial debate to harden the SPEC
+against hidden assumptions, edge cases, and failure modes.
 
 **Actions**:
 1. Read discovery output from `memory/discoveries/`
-2. Write `SPEC.md` with:
-   - Problem statement
-   - Success criteria (measurable, not "works well")
-   - Tech stack (AI recommends, user confirms)
-   - **UI Library** (if frontend project → call `ui_library` skill → auto-suggest best library)
-   - Out of scope (explicit exclusions)
-   - Acceptance criteria — what USER will verify at acceptance test
-   - Edge cases
-   - Files to create/modify/delete
-3. Present SPEC to user for review
+2. Read `memory/LEARNED.md` for relevant past bugs → warn if similar problems exist
+3. Run **SPEC debate skill** (`run_spec_skill`) with 3 rounds:
+   - **Round 1 — Assumption Challenge**: AI questions what was assumed but not stated
+   - **Round 2 — Edge Case Hunt**: AI identifies where the system breaks
+   - **Round 3 — SPEC Write**: Write hardened SPEC.md (measurable criteria, resolved edge cases, UI library auto-suggest)
+4. Present to user for APPROVE / REQUEST CHANGES / ABANDON
 
-**Tech Stack + UI Library Check (auto-triggered for frontend projects):**
+**Tech Stack + UI Library (auto-triggered for frontend projects):**
 ```
-After tech stack is confirmed (React / Vue / Svelte / Next.js / etc.):
-  1. Check USER.md for UI_PREFERENCES (if any)
-  2. If frontend project:
-     → Call: route_ui_library(project_type, tech_stack, requirements)
-     → Best library suggested automatically
-     → Show in SPEC.md: ## Tech Stack
-        - Framework: <selected>
-        - UI Library: <recommended> (install: <command>)
-  3. User confirms or changes UI library choice
-  4. Proceed to build
+After tech stack is confirmed:
+  1. If frontend project → Call: route_ui_library(project_type, tech_stack, requirements)
+  2. Best UI library suggested in SPEC.md with install command
+  3. User confirms or overrides the choice
 ```
 
-**AUTO-CONFIRM SPEC BYPASS (check BEFORE showing USER REVIEW gate):**
+**AUTO-CONFIRM SPEC BYPASS:**
 ```
-BEFORE showing the SPEC REVIEW gate below:
+BEFORE running debate:
 1. Read memory/.auto_confirm.json
 2. IF {"enabled": true} AND {"spec": true}:
-   ✅ SPEC IS AUTO-APPROVED — Do NOT show the USER REVIEW gate below.
-   ✅ Log in memory: "SPEC auto-approved (auto-confirm active)"
-   ✅ Proceed directly to /build
-   ✅ The only thing you still ask: /ship rating at the end
-3. IF auto-confirm is NOT active:
-   → Show the USER REVIEW gate below (normal flow)
+   ✅ SKIP DEBATE — Write SPEC.md directly and auto-approve
+   ✅ Proceed to /build (gate already bypassed)
+3. ELSE → Run full 3-round debate above
 ```
 
-**HARD GATE — USER REVIEW** (SKIP THIS BLOCK if auto-confirm spec=true):
+**USER APPROVAL GATE** (SKIP if auto-confirm spec=true):
 ```
-┌─────────────────────────────────────────────────────┐
-│  SPEC REVIEW                                          │
-│                                                      │
-│  Read SPEC.md above. Answer ONE of:                  │
-│                                                      │
-│  A) APPROVE — "Build it."                            │
-│     → /build is now UNLOCKED                          │
-│                                                      │
-│  B) REQUEST CHANGES — "Change X, Y before building"  │
-│     → AI revises SPEC, presents again                │
-│     → Loop until USER APPROVES                        │
-│                                                      │
-│  C) ABANDON — "Not what I need"                       │
-│     → Workflow ends, nothing built                    │
-└─────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────┐
+│  🔒 SPEC REVIEW — HARD GATE                                 │
+│                                                              │
+│  SPEC has been hardened through adversarial debate.          │
+│  Read SPEC.md above. Answer ONE of:                         │
+│                                                              │
+│  A) APPROVE — "Build it."                                    │
+│     → /build is UNLOCKED                                     │
+│                                                              │
+│  B) REQUEST CHANGES — "Change X, Y before building"         │
+│     → workflow(step='spec', changes='X, Y')                  │
+│     → AI revises SPEC, presents again                        │
+│     → Loop until you approve                                │
+│                                                              │
+│  C) ABANDON — "Not what I need."                            │
+│     → Workflow ends, nothing built                          │
+└─────────────────────────────────────────────────────────────┘
 ```
 
-**Exit gate**: User answered "APPROVE" or equivalent (OR auto-confirm spec=true). Gate recorded in memory.
+**Exit gate**: User answered "APPROVE" (OR auto-confirm spec=true). Gate recorded in memory.
 
 ---
 

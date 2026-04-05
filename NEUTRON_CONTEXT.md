@@ -77,6 +77,33 @@ neutron gc --pycache --tests --data-json  # full cleanup
 neutron gc --large 50                  # delete files > 50MB
 ```
 
+## 🧩 Built-in Skills (11 total)
+
+NEUTRON has **11 skills** auto-discovered from `skills/core/*/SKILL.md`.
+
+| Skill | Purpose |
+|-------|---------|
+| **workflow** | 5-step pipeline: explore→discovery→**spec**→build→acceptance→ship |
+| **discovery** | 12-question structured interview before building |
+| **spec** ⭐NEW | 3-round adversarial debate: assumptions → edge cases → hardened SPEC |
+| **orchestration** ⭐NEW | Multi-agent parallel task distribution (analyze→plan→execute→merge→report) |
+| **feature_library** ⭐NEW | 40+ patterns: auth (JWT/OAuth/RBAC), API, database, realtime, resilience, observability |
+| **ui_library** | 5 frontend libraries: shadcn/ui, Ant Design, Mantine, Magic UI, DaisyUI |
+| **memory** | Long-term memory, Dream Cycle, hub sync |
+| **context** | Context loading priority stack |
+| **engine** | Skill routing, Smart Observer, CI audit |
+| **checkpoint** | Session state persistence |
+| **acceptance_test** | User verification gate |
+
+**SPEC Debate Skill** (new): Run 3 rounds before building:
+1. **Round 1** — AI challenges assumptions you didn't state
+2. **Round 2** — AI hunts edge cases where the system breaks
+3. **Round 3** — Write SPEC.md with measurable criteria, resolved edge cases, auto-suggested patterns
+
+**Feature Library** (new): Auto-suggests backend patterns based on your tech stack. Examples: JWT auth, REST API, Alembic migrations, Celery background jobs, Circuit Breaker, Structured JSON logging.
+
+**Orchestration Skill** (new): Parallel multi-agent execution for large tasks. Decomposes into independent units, assigns agents, prevents file conflicts, merges results.
+
 ## 🌐 Multi-Window Hub/Satellite Architecture
 
 When running multiple Claude Code windows (each in a different project), knowledge is shared via the **hub**:

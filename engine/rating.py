@@ -20,6 +20,8 @@ from pathlib import Path
 from datetime import datetime
 from typing import Optional
 
+from engine._atomic import atomic_write
+
 NEUTRON_ROOT = Path(__file__).parent.parent
 MEMORY_DIR = NEUTRON_ROOT / "memory"
 RATINGS_FILE = MEMORY_DIR / "shipments.json"
@@ -37,11 +39,11 @@ def _load() -> dict:
 
 
 def _save(data: dict):
-    """Save shipment data atomically."""
+    """Save shipment data atomically (filelock + fsync + rename)."""
     MEMORY_DIR.mkdir(exist_ok=True)
     lock = filelock.FileLock(str(LOCK_FILE), timeout=10)
     with lock:
-        RATINGS_FILE.write_text(json.dumps(data, indent=2, ensure_ascii=False))
+        atomic_write(RATINGS_FILE, json.dumps(data, indent=2, ensure_ascii=False))
 
 
 def record_shipment(

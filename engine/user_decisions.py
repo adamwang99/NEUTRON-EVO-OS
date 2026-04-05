@@ -13,6 +13,8 @@ from pathlib import Path
 from datetime import datetime
 from typing import Optional
 
+from engine._atomic import atomic_write
+
 NEUTRON_ROOT = Path(__file__).parent.parent
 MEMORY_DIR = NEUTRON_ROOT / "memory"
 DECISIONS_FILE = MEMORY_DIR / "user_decisions.json"
@@ -30,11 +32,11 @@ def _load() -> list:
 
 
 def _save(decisions: list):
-    """Save decisions to disk atomically."""
+    """Save decisions to disk atomically (filelock + fsync + rename)."""
     MEMORY_DIR.mkdir(exist_ok=True)
     lock = filelock.FileLock(str(LOCK_FILE), timeout=10)
     with lock:
-        DECISIONS_FILE.write_text(json.dumps(decisions, indent=2, ensure_ascii=False))
+        atomic_write(DECISIONS_FILE, json.dumps(decisions, indent=2, ensure_ascii=False))
 
 
 def record(

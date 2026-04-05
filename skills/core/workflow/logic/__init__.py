@@ -181,12 +181,19 @@ def _step_discovery(task: str, context: dict) -> dict:
 
 
 def _step_spec(task: str, context: dict) -> dict:
-    """Step 3: Write SPEC.md. HARD GATE: USER REVIEW before /build is unlocked."""
+    """
+    Step 3: SPEC Debate + Write SPEC.md.
+
+    Delegates to the SPEC debate skill for 3-round adversarial loop:
+      prepare → round1 → round2 → write → USER APPROVAL GATE
+
+    HARD GATE: USER must approve SPEC before /build is unlocked.
+    AUTO-CONFIRM: if spec=true, skip debate and auto-approve.
+    """
     gate = _load_gate()
 
-    # Check discovery was completed (gate flag first, then file-based fallback)
+    # Check discovery was completed
     if not gate.get("discovery_complete"):
-        # Fallback: look for DISCOVERY.md in both NEUTRON root and MEMORY_DIR
         discovery_files = (
             list(_NEUTRON_ROOT.glob("DISCOVERY.md"))
             + list(MEMORY_DIR.rglob("DISCOVERY.md"))
@@ -200,62 +207,63 @@ def _step_spec(task: str, context: dict) -> dict:
         gate["discovery_complete"] = True
         _save_gate(gate)
 
-    spec_path = _NEUTRON_ROOT / "SPEC.md"
-
-    # If context has spec content, write it
-    if context.get("write_spec"):
-        spec_content = context.get("spec_content", "")
-        if spec_content:
-            spec_path.write_text(spec_content)
-
     gate["current_step"] = "spec"
     _save_gate(gate)
 
-    # AUTO-CONFIRM: auto-approve SPEC
+    # AUTO-CONFIRM: skip debate, auto-approve SPEC
     if _auto_confirm_check("spec"):
         result = _record_spec_approval(True, {"notes": f"auto-confirm (task={task[:60]})", "task": task})
         result["auto_confirmed"] = True
         return result
 
-    # Handle USER APPROVAL
+    # Handle USER APPROVAL directly (debate already done)
     if context.get("approved") is True:
         return _record_spec_approval(True, context)
     elif context.get("approved") is False:
         return _record_spec_approval(False, context)
 
-    gate["spec_approved"] = False  # Reset approval
-    _save_gate(gate)
-
-    if spec_path.exists():
-        content = spec_path.read_text()
+    # Handle revision (user requested changes to SPEC)
+    if context.get("revise") or context.get("changes"):
+        from skills.core.spec.logic import run_spec_skill
+        changes = context.get("changes") or context.get("revise", "")
+        result = run_spec_skill(task, {"action": "revise", "changes": changes})
+        if result.get("status") == "revision_needed":
+            return {
+                "status": "revision_in_progress",
+                "output": result["output"],
+                "next_action": result.get("next_action"),
+                "ci_delta": 0,
+            }
+        write_result = run_spec_skill(task, {"action": "write"})
         return {
             "status": "spec_written",
-            "output": (
-                f"SPEC.md written to: {spec_path.relative_to(_NEUTRON_ROOT)}\n\n"
-                "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-                "🔒 USER REVIEW GATE — SPEC MUST BE APPROVED BEFORE BUILD\n"
-                "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
-                "Read SPEC.md above. Answer ONE of:\n\n"
-                "A) APPROVE — \"Build it.\"\n"
-                "   → Call: workflow(step='spec', approved=True)\n\n"
-                "B) REQUEST CHANGES — \"Change X, Y before building\"\n"
-                "   → Describe what to change, I will revise SPEC.md\n"
-                "   → Loop until you APPROVE\n\n"
-                "C) ABANDON — \"Not what I need\"\n"
-                "   → Workflow ends. Nothing built.\n\n"
-                "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-                "SPEC.md is ready for review above.\n"
-                "Read it and answer: APPROVE, REQUEST CHANGES, or ABANDON."
-            ),
-            "spec_path": str(spec_path.relative_to(_NEUTRON_ROOT)),
+            "output": write_result["output"],
+            "spec_path": write_result.get("spec_path"),
             "user_action_required": True,
-            "ci_delta": 0,
+            "ci_delta": write_result.get("ci_delta", 0),
         }
 
+    # Delegate to SPEC debate skill
+    spec_action = context.get("spec_action", "prepare")
+
+    from skills.core.spec.logic import run_spec_skill
+    result = run_spec_skill(task, {
+        "action": spec_action,
+        "answers": context.get("answers", {}),
+        "resolutions": context.get("resolutions", {}),
+    })
+
     return {
-        "status": "awaiting_discovery",
-        "output": "Run /discovery first to generate the input for SPEC.md",
-        "ci_delta": 0,
+        "status": result.get("status", "spec_debate"),
+        "output": result.get("output", ""),
+        "next_action": result.get("next_action"),
+        "round": result.get("round"),
+        "warnings": result.get("warnings"),
+        "discovery_path": result.get("discovery_path"),
+        "edge_cases": result.get("edge_cases"),
+        "spec_path": result.get("spec_path"),
+        "user_action_required": result.get("next_action") == "approve",
+        "ci_delta": result.get("ci_delta", 0),
     }
 
 

@@ -30,6 +30,8 @@ from pathlib import Path
 from datetime import datetime
 from typing import Optional
 
+from engine._atomic import atomic_write
+
 NEUTRON_ROOT = Path(__file__).parent.parent
 MEMORY_DIR = NEUTRON_ROOT / "memory"
 CONFIG_FILE = MEMORY_DIR / ".auto_confirm.json"
@@ -58,11 +60,11 @@ def _load() -> dict:
 
 
 def _save(cfg: dict):
-    """Save auto-confirm config atomically."""
+    """Save auto-confirm config atomically (filelock + fsync + rename)."""
     MEMORY_DIR.mkdir(exist_ok=True)
     lock = filelock.FileLock(str(LOCK_FILE), timeout=10)
     with lock:
-        CONFIG_FILE.write_text(json.dumps(cfg, indent=2, ensure_ascii=False))
+        atomic_write(CONFIG_FILE, json.dumps(cfg, indent=2, ensure_ascii=False))
 
 
 # ─── Public API ────────────────────────────────────────────────────────────────
