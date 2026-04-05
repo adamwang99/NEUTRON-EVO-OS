@@ -1,0 +1,41 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest watchdog
+
+      - name: Lint check (no credentials in code)
+        run: |
+          # Fail if .env or credentials are committed
+          if grep -r --include="*.py" --include="*.sh" \
+            "api[_-]key\s*=" . 2>/dev/null | grep -v "example\|stub\|pattern"; then
+            echo "ERROR: Possible credential in code"
+            exit 1
+          fi
+
+      - name: Run tests
+        run: python3 -m pytest tests/ -v --tb=short
+
+      - name: GitHub Actions marker
+        run: echo "CI ran at $(date)"
