@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import threading
 from pathlib import Path
@@ -145,8 +146,9 @@ def _dream_cycle_inner() -> dict:
 
 def distill_log(log_path: str) -> dict:
     """
-    Compress a log into a Cookbook summary.
-    Extracts key patterns and stores compressed version.
+    Compress a log into a Cookbook summary with actionable insights.
+    Extracts patterns, errors, decisions, and CI scores from session logs.
+    No LLM needed — pure heuristic analysis.
 
     Returns: {status, cookbook, entries_extracted}
     """
@@ -157,37 +159,126 @@ def distill_log(log_path: str) -> dict:
     content = path.read_text()
     lines = [l.strip() for l in content.splitlines() if l.strip()]
 
-    # Extract key event lines (lines with timestamps, action markers, decisions)
-    key_lines = [
-        l for l in lines
-        if any(kw in l.lower() for kw in ["action:", "outcome:", "decision:", "ci delta", "##"])
-    ]
+    # ── Extract structured data ───────────────────────────────────────────
+    # CI deltas
+    ci_deltas = []
+    for l in lines:
+        m = re.search(r"ci delta:\s*([+-]?\d+)", l, re.IGNORECASE)
+        if m:
+            ci_deltas.append(int(m.group(1)))
 
-    if not key_lines:
-        return {"status": "skipped", "message": "No distillable content found"}
+    # Errors
+    error_lines = [l for l in lines if "error" in l.lower() or "fail" in l.lower()]
+    # Ok/completed lines
+    ok_lines = [l for l in lines if l.lower().startswith("outcome:") and "ok" in l.lower()]
+    # Decisions
+    decision_lines = [l for l in lines if "decision:" in l.lower()]
+    # Checkpoints (milestones)
+    checkpoint_lines = [l for l in lines if l.startswith("## [")]
+    # Skills invoked
+    skill_invocations = re.findall(r"skill:\s*(\w+)", " ".join(lines), re.IGNORECASE)
 
-    # Build cookbook
+    # Repeated error patterns (same error ≥ 2x → flagged)
+    error_counts: dict[str, int] = {}
+    for l in error_lines:
+        # Normalize: strip timestamps and paths
+        normalized = re.sub(r"\d{4}-\d{2}-\d{2}", "[DATE]", l)
+        normalized = re.sub(r"/[\w/\.-]+", "[PATH]", normalized)
+        normalized = re.sub(r"[a-f0-9]{6,}", "[HASH]", normalized)
+        error_counts[normalized] = error_counts.get(normalized, 0) + 1
+    repeated_errors = {k: v for k, v in error_counts.items() if v >= 2}
+
+    # ── Build cookbook ─────────────────────────────────────────────────────
     cookbook_name = f"{path.stem}_cookbook.md"
     cookbook_path = COOKBOOKS_DIR / cookbook_name
+
+    total_ci = sum(ci_deltas)
+    net_ci = sum(ci_deltas)
+    ci_label = "positive" if net_ci >= 0 else "concerning"
 
     cookbook_content = [
         f"# Cookbook: {path.stem}",
         "",
-        f"> Distilled from {path.name} on {datetime.now().strftime('%Y-%m-%d %H:%M')}",
+        f"> Distilled on {datetime.now().strftime('%Y-%m-%d %H:%M')}",
         f"> ∫f(t)dt — Functional Credibility Over Institutional Inertia",
         "",
-        f"## Key Events ({len(key_lines)} entries)",
+        f"## Summary",
+        f"- Sessions log: {path.name}",
+        f"- Checkpoints recorded: {len(checkpoint_lines)}",
+        f"- Skills invoked: {len(skill_invocations)}",
+        f"- CI delta total: {total_ci:+.0f} ({ci_label})",
+        f"- Outcomes: {len(ok_lines)} ok / {len(error_lines)} errors",
+        f"- Decisions recorded: {len(decision_lines)}",
         "",
     ]
-    for line in key_lines[:100]:  # cap at 100 lines
-        cookbook_content.append(line)
+
+    if repeated_errors:
+        cookbook_content += [
+            f"## ⚠️  Repeated Errors ({len(repeated_errors)} pattern(s))",
+            "These errors appeared 2+ times — consider adding to LEARNED.md:",
+            "",
+        ]
+        for err, count in sorted(repeated_errors.items(), key=lambda x: -x[1]):
+            cookbook_content.append(f"- [{count}x] {err[:100]}")
+        cookbook_content.append("")
+
+    if decision_lines:
+        cookbook_content += [
+            f"## 📌 Decisions ({len(decision_lines)})",
+            "",
+        ]
+        for d in decision_lines[:10]:
+            cookbook_content.append(f"- {d[:120]}")
+        cookbook_content.append("")
+
+    if error_lines:
+        cookbook_content += [
+            f"## Errors Encountered ({len(error_lines)})",
+            "",
+        ]
+        for e in error_lines[:10]:
+            cookbook_content.append(f"- {e[:120]}")
+        cookbook_content.append("")
+
+    cookbook_content += [
+        f"## Key Milestones ({len(checkpoint_lines)})",
+        "",
+    ]
+    for c in checkpoint_lines[:20]:
+        cookbook_content.append(f"- {c[:120]}")
+    cookbook_content.append("")
+
+    if skill_invocations:
+        # Count skill usage
+        skill_counts: dict[str, int] = {}
+        for s in skill_invocations:
+            skill_counts[s.lower()] = skill_counts.get(s.lower(), 0) + 1
+        cookbook_content += [
+            f"## 🔧 Skills Used ({len(skill_invocations)} invocations)",
+            "",
+        ]
+        for s, c in sorted(skill_counts.items(), key=lambda x: -x[1]):
+            cookbook_content.append(f"- {s}: {c}x")
+        cookbook_content.append("")
+
+    cookbook_content += [
+        f"## CI Breakdown",
+        f"- Total CI delta: {total_ci:+.0f}",
+        f"- Actions: {len(ci_deltas)}",
+        f"- Avg per action: {total_ci/len(ci_deltas):.1f}" if ci_deltas else "- No CI data",
+        "",
+        "---",
+        "*Auto-generated by NEUTRON Dream Cycle. Do not edit — archive instead.*",
+    ]
 
     cookbook_path.write_text("\n".join(cookbook_content))
 
     return {
         "status": "distilled",
         "cookbook": str(cookbook_path),
-        "entries_extracted": len(key_lines),
+        "entries_extracted": len(checkpoint_lines) + len(error_lines) + len(decision_lines),
+        "repeated_errors": len(repeated_errors),
+        "net_ci": net_ci,
     }
 
 
