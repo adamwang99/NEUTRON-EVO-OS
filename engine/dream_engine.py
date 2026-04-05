@@ -29,7 +29,15 @@ COOKBOOKS_DIR = MEMORY_DIR / "cookbooks"
 PENDING_DIR = MEMORY_DIR / "pending"          # LEARNED_pending.md drafts
 NOISE_THRESHOLD_DAYS = 3   # days old before archiving
 ARCHIVED_RETENTION_DAYS = 7  # max age for archived files
-MAX_COOKBOOK_SIZE_KB = 50   # truncate long logs before AI analysis
+MAX_ARCHIVED_COUNT = 500    # hard cap: delete oldest beyond this count
+MAX_SESSION_LOG_LINES = 500  # hard cap on active session log size
+MAX_COOKBOOKS = 30          # keep only N most recent cookbooks
+
+# Test guard: when True, dream_cycle skips archiving to avoid polluting
+# the real system archived/ directory during pytest runs.
+# Tests set this via monkeypatch before calling dream_cycle().
+_IS_TEST_MODE = os.environ.get("NEUTRON_DREAM_TEST", "") == "1"
+MAX_PENDING_AGE_DAYS = 7    # auto-archive pending entries older than this
 
 # Re-entrancy guard: prevents concurrent dream cycles
 _dream_running = threading.Event()
@@ -346,7 +354,7 @@ def _write_learned_pending(drafts: list[dict]) -> int:
 
 def _prune_expired_pending() -> int:
     """
-    Remove pending entries older than 7 days (auto-archive, not delete).
+    Remove pending entries older than MAX_PENDING_AGE_DAYS (auto-archive, not delete).
     Returns count of entries pruned.
     """
     if not PENDING_DIR.exists():
@@ -358,7 +366,7 @@ def _prune_expired_pending() -> int:
     ARCHIVED_DIR.mkdir(exist_ok=True)
     content = pending_path.read_text()
     lines = content.splitlines()
-    cutoff = datetime.now() - timedelta(days=7)
+    cutoff = datetime.now() - timedelta(days=MAX_PENDING_AGE_DAYS)
     kept = []
     expired = []
 
@@ -503,63 +511,95 @@ def _dream_cycle_inner() -> dict:
     # ── Phase 4: Prune expired pending entries ────────────────────────────
     expired_count = _prune_expired_pending()
 
-    # ── Phase 5: Archive old logs + standard retention ───────────────────
+    # ── Phase 5: Archive old logs + multi-layer retention ─────────────────
     archived_count = 0
     archived_files = []
-    MAX_LINES = 10_000
+    pruned_files = []   # initialized outside guard for return statement access
 
-    for log in MEMORY_DIR.iterdir():
-        if not (log.is_file() and log.suffix == ".md"):
-            continue
-        if log.name.startswith(".dream_active"):
-            continue
-        if log.name.startswith(today_str):
-            # Today's log — check if oversized
-            try:
-                line_count = sum(1 for _ in log.open())
-                if line_count > MAX_LINES:
-                    dest = ARCHIVED_DIR / f"{log.stem}_{timestamp}{log.suffix}"
-                    shutil.copy2(log, dest)
-                    archived_files.append(f"{log.name} ({line_count} lines — oversized)")
-                    archived_count += 1
-                    lines = log.read_text().splitlines()
-                    log.write_text("\n".join(lines[-500:]) + "\n")
-                    archived_files.append(f"  → {log.name} truncated to 500 lines")
-            except Exception as e:
-                logger.warning(f"Dream Cycle: could not process oversized log {log}: {e}")
-            continue
-        # Archive old logs
-        dest = ARCHIVED_DIR / f"{log.stem}_{timestamp}{log.suffix}"
-        shutil.copy2(log, dest)
-        archived_files.append(log.name)
-        archived_count += 1
+    # Test guard: skip all disk writes during pytest to avoid polluting
+    # the real system archived/ directory. Tests set NEUTRON_DREAM_TEST=1.
+    if _IS_TEST_MODE:
+        logger.info("Dream Cycle: TEST MODE — skipping archive/prune writes")
+        retention_deleted = 0
+        cookbook_count_deleted = 0
+    else:
+        for log in MEMORY_DIR.iterdir():
+            if not (log.is_file() and log.suffix == ".md"):
+                continue
+            if log.name.startswith(".dream_active"):
+                continue
+            if log.name.startswith("LEARNED"):  # permanent file — never archive
+                continue
+            if log.name.startswith(today_str):
+                # Today's log — enforce hard cap on size
+                try:
+                    line_count = sum(1 for _ in log.open())
+                    if line_count > MAX_SESSION_LOG_LINES:
+                        dest = ARCHIVED_DIR / f"{log.stem}_{timestamp}{log.suffix}"
+                        shutil.copy2(log, dest)
+                        archived_files.append(f"{log.name} ({line_count} lines → capped)")
+                        archived_count += 1
+                        lines = log.read_text().splitlines()
+                        log.write_text("\n".join(lines[-MAX_SESSION_LOG_LINES:]) + "\n")
+                        archived_files.append(f"  → {log.name} truncated to {MAX_SESSION_LOG_LINES} lines")
+                except Exception as e:
+                    logger.warning(f"Dream Cycle: could not process oversized log {log}: {e}")
+                continue
+            # Archive old logs (past days)
+            dest = ARCHIVED_DIR / f"{log.stem}_{timestamp}{log.suffix}"
+            shutil.copy2(log, dest)
+            archived_files.append(log.name)
+            archived_count += 1
 
-    # Prune old .tmp/.cache noise files
-    cutoff = now - timedelta(days=NOISE_THRESHOLD_DAYS)
-    pruned_files = []
-    for item in list(MEMORY_DIR.iterdir()) + list(ARCHIVED_DIR.iterdir()):
-        if item.name in ("archived", "cookbooks", "pending", ".dream_active"):
-            continue
-        if item.is_file() and item.suffix in (".tmp", ".cache"):
+        # Prune old .tmp/.cache noise files
+        cutoff = now - timedelta(days=NOISE_THRESHOLD_DAYS)
+        pruned_files = []
+        for item in list(MEMORY_DIR.iterdir()) + list(ARCHIVED_DIR.iterdir()):
+            if item.name in ("archived", "cookbooks", "pending", ".dream_active"):
+                continue
+            if item.is_file() and item.suffix in (".tmp", ".cache"):
+                try:
+                    mtime = datetime.fromtimestamp(item.stat().st_mtime)
+                    if mtime < cutoff:
+                        item.unlink()
+                        pruned_files.append(item.name)
+                except Exception:
+                    pass
+
+        # Layer 1: Time-based retention (age cap)
+        archived_cutoff = now - timedelta(days=ARCHIVED_RETENTION_DAYS)
+        retention_deleted = 0
+        for archived_file in sorted(ARCHIVED_DIR.iterdir(), key=lambda f: f.stat().st_mtime):
             try:
-                mtime = datetime.fromtimestamp(item.stat().st_mtime)
-                if mtime < cutoff:
-                    item.unlink()
-                    pruned_files.append(item.name)
+                mtime = datetime.fromtimestamp(archived_file.stat().st_mtime)
+                if mtime < archived_cutoff:
+                    archived_file.unlink()
+                    retention_deleted += 1
             except Exception:
                 pass
 
-    # Cap archived/ retention
-    archived_cutoff = now - timedelta(days=ARCHIVED_RETENTION_DAYS)
-    retention_deleted = 0
-    for archived_file in sorted(ARCHIVED_DIR.iterdir(), key=lambda f: f.stat().st_mtime):
-        try:
-            mtime = datetime.fromtimestamp(archived_file.stat().st_mtime)
-            if mtime < archived_cutoff:
-                archived_file.unlink()
-                retention_deleted += 1
-        except Exception:
-            pass
+        # Layer 2: Count-based retention (hard cap — delete oldest)
+        all_archived = sorted(ARCHIVED_DIR.iterdir(), key=lambda f: f.stat().st_mtime)
+        count_deleted = 0
+        while len(all_archived) > MAX_ARCHIVED_COUNT:
+            oldest = all_archived.pop(0)
+            try:
+                oldest.unlink()
+                count_deleted += 1
+            except Exception:
+                pass
+        retention_deleted += count_deleted
+
+        # Layer 3: Cap cookbooks/ (keep only N most recent)
+        cookbook_count_deleted = 0
+        if COOKBOOKS_DIR.exists():
+            cookbooks = sorted(COOKBOOKS_DIR.glob("*.md"), key=lambda f: f.stat().st_mtime, reverse=True)
+            for old_cbk in cookbooks[MAX_COOKBOOKS:]:
+                try:
+                    old_cbk.unlink()
+                    cookbook_count_deleted += 1
+                except Exception:
+                    pass
 
     # Stop observer during dream cycle
     try:
@@ -579,6 +619,7 @@ def _dream_cycle_inner() -> dict:
         "pending_entries": pending_count,
         "expired_pending": expired_count,
         "retention_deleted": retention_deleted,
+        "cookbooks_pruned": cookbook_count_deleted,
         "significant_events": len(all_sig_events),
         "cookbook_patterns": len(all_cookbook_sections),
         "ai_errors": ai_errors,

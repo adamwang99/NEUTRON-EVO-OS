@@ -68,31 +68,27 @@ fi
 
 # ── Garbage Collection (every session — silent) ─────────────────────────────
 # Runs lightweight cleanup silently. Full gc: neutron gc --pycache --tests
-# Uses lock file to prevent concurrent gc if multiple sessions start.
 # Guard: NEUTRON_ROOT must point to a valid NEUTRON installation.
+# Uses lock file to prevent concurrent gc if multiple sessions start.
 if [ ! -f "$GC_LOCK" ] && [ -f "$NEUTRON_ROOT/engine/cli/main.py" ]; then
     touch "$GC_LOCK"
     (
-        # 1. archived/ daily log archives — delete files older than 7 days
+        # 1. Bash cleanup: __pycache__, *.pyc, .pytest_cache (fast, reliable)
+        find "$NEUTRON_ROOT" -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null
+        find "$NEUTRON_ROOT" -name "*.pyc" -type f -delete 2>/dev/null
+        find "$NEUTRON_ROOT" -name ".pytest_cache" -type d -exec rm -rf {} + 2>/dev/null
+
+        # 2. Bash cleanup: archived/ old by age (reliable for this)
         if [ -d "$ARCHIVED_DIR" ]; then
             find "$ARCHIVED_DIR" -maxdepth 1 \
                 \( -name "????-??-??_??????????.md" -o -name "????-??-??_*.md" \) \
                 -type f -mtime +7 -delete 2>/dev/null
-        fi
-
-        # 2. __pycache__ directories recursively
-        find "$NEUTRON_ROOT" -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null
-
-        # 3. *.pyc files
-        find "$NEUTRON_ROOT" -name "*.pyc" -type f -delete 2>/dev/null
-
-        # 4. .pytest_cache
-        find "$NEUTRON_ROOT" -name ".pytest_cache" -type d -exec rm -rf {} + 2>/dev/null
-
-        # 5. data_*.json dumps in archived/ (test/agent garbage — always clean)
-        if [ -d "$ARCHIVED_DIR" ]; then
+            # 3. data_*.json dumps in archived/ (test/agent garbage)
             find "$ARCHIVED_DIR" -name "data_*.json" -type f -delete 2>/dev/null
         fi
+
+        # 4. Python cleanup: count-based cap + pending expiry (bash can't do this)
+        python3 "$HOOKS_DIR/gc_lightweight.py" 2>/dev/null
     ) 2>/dev/null
     rm -f "$GC_LOCK"
 fi
