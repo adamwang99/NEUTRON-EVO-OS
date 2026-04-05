@@ -35,11 +35,35 @@ __pycache__/
 # MemoryOS local config (user-specific)
 MemoryOS/.memoryos/config.json
 
-# Context export (local only - do not push)
-context-export/
+# Local session data (user-specific, generated each session)
+memory/YYYY-MM-DD.md
+memory/archived/
+memory/cookbooks/
+memory/discoveries/
+memory/.discovery_session.json
+memory/.learned_invocations.json
+memory/.first_session_done
+memory/.workflow_gate.json
+memory/.acceptance_status.json
+memory/.dream_active
 
-# Claude Code local config
+# Session handoff files
+memory/handoff*.md
+
+# Test files (local only)
+tests/__init__.py
+tests/acceptance.sh
+tests/test_dream_engine.py
+tests/test_expert_skill_router.py
+tests/test_mcp_server.py
+tests/test_skill_registry.py
+tests/test_skill_execution.py
+
+# Claude Code local config (NEVER commit - user-specific)
 .claude/
+
+# VS Code workspace settings (user-specific)
+.vscode/
 
 # ─── NEUTRON EVO OS — Protected user data (NEVER commit) ───────────────────────
 
