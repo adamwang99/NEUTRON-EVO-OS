@@ -204,21 +204,22 @@ def route_task(task: str, context: dict = None) -> dict:
 def execute_skill(skill_path: str, task: str, context: dict = None) -> dict:
     """
     Execute a skill after CI audit passes.
-    Delegates to skill_execution.run() for the actual logic.
+    Delegates to skill_execution.run() which now handles routing internally.
+
+    NOTE: route_task() is now called inside skill_execution.run() — do NOT
+    route here to avoid double-routing (route_task -> run -> route_task).
+
     skill_path: e.g. 'skills/core/workflow/SKILL.md'
-    Returns: {status, output, ci_delta, skill, duration_ms}
+    Returns: {status, output, ci_delta, skill, duration_ms, routing_confidence}
     """
     from engine import skill_execution
     # skill_path: 'skills/core/<name>/SKILL.md' — index 2 = skill name
-    # Guard: validate path has at least 3 segments before split
     parts = skill_path.split("/")
     if len(parts) < 3:
         return {"status": "error", "output": f"Invalid skill_path: {skill_path!r}", "ci_delta": 0}
     skill_name = parts[2]
-    # Route first to get confidence score
-    route_result = route_task(task, context)
+    # run() calls route_task() internally — no need to route here
     ctx = dict(context) if context else {}
-    ctx["_routing_confidence"] = route_result.get("confidence", 1.0)
     return skill_execution.run(skill_name, task, ctx)
 
 

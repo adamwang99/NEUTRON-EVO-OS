@@ -28,41 +28,60 @@ def run(skill_name: str, task: str, context: dict = None) -> dict:
     """
     Full execution pipeline for a skill.
 
-    1. Validate: skill exists, has logic, inputs valid
-    2. Execute: call skill's logic.<name>(task, context)
-    3. Log: append result to memory/YYYY-MM-DD.md
-    4. Update CI: apply delta from execution result
+    CLOSED FEEDBACK LOOP — this is the critical fix:
+    1. Route: call route_task() for routing confidence + learned skill auto-match
+    2. CI gate: skill with CI < 30 is blocked (rating feedback now affects routing)
+    3. Execute: call skill's logic.<name>(task, context)
+    4. Log: append result to memory/YYYY-MM-DD.md
+    5. Update CI: apply delta from execution result
 
-    Returns: {status, output, ci_delta, skill, duration_ms}
+    Returns: {status, output, ci_delta, skill, duration_ms, routing_confidence}
     """
-    from engine.expert_skill_router import get_ledger_entry, update_ci
+    from engine.expert_skill_router import get_ledger_entry, update_ci, route_task
     from engine.skill_registry import get_skill, has_logic
 
     start = time.time()
-    context = context or {}
+    context = dict(context) if context else {}
 
-    # --- Validation: skill exists ---
-    skill = get_skill(skill_name)
-    if not skill:
-        return {"status": "error", "output": f"Skill '{skill_name}' not found", "ci_delta": 0}
+    # ── Routing: advisory only — explicit skill requests are NEVER overridden.
+    # route_task() is called to get confidence score + learned skill auto-match.
+    # The actual skill executed is always skill_name (requested by caller).
+    route_result = route_task(task, context)
+    routing_confidence = route_result.get("confidence", 1.0)
+    routing_reasoning = route_result.get("reasoning", "")
 
-    # --- Validation: confidence gate ---
-    # If caller passed routing confidence, gate on it.
-    # confidence < 0.4 means routing is uncertain — warn but allow.
-    routing_confidence = context.get("_routing_confidence", 1.0)
+    # Warn if confidence is low (advisory only)
     if routing_confidence < 0.4:
-        context["_low_confidence"] = True  # flag for caller awareness
+        context["_low_confidence"] = True
 
-    # --- Validation: CI gate ---
+    # ── CI gate: always apply to the skill being executed.
+    # Rating 1-2 → update_ci(skill, -5) → CI drops → next run is BLOCKED.
+    # This is the closed feedback loop: past ratings affect blocking decisions.
     ledger = get_ledger_entry(skill_name)
     if ledger["CI"] < 30:
         return {
             "status": "blocked",
-            "output": f"Skill '{skill_name}' CI={ledger['CI']} < 30 — requires human review",
+            "output": (
+                f"Skill '{skill_name}' CI={ledger['CI']} < 30 — requires human review.\n"
+                f"Low CI due to past rating feedback. Improve by getting higher ratings at /ship."
+            ),
             "ci_delta": 0,
+            "skill": skill_name,
+            "routing_confidence": routing_confidence,
+            "routing_reasoning": routing_reasoning,
         }
 
-    # --- Validation: run validation module if real content exists ---
+    # ── Validation: skill exists ---
+    skill = get_skill(skill_name)
+    if not skill:
+        return {
+            "status": "error",
+            "output": f"Skill '{skill_name}' not found",
+            "ci_delta": 0,
+            "routing_confidence": routing_confidence,
+        }
+
+    # ── Validation: run validation module if real content exists ---
     validation_error = _run_validation(skill_name, {"task": task, "context": context})
     if validation_error:
         return {
@@ -72,7 +91,7 @@ def run(skill_name: str, task: str, context: dict = None) -> dict:
             "skill": skill_name,
         }
 
-    # --- Execute: call logic module ---
+    # ── Execute: call logic module ---
     if not has_logic(skill_name):
         return {
             "status": "not_implemented",
@@ -100,6 +119,9 @@ def run(skill_name: str, task: str, context: dict = None) -> dict:
         "ci_delta": ci_delta,
         "skill": skill_name,
         "duration_ms": duration_ms,
+        # FEEDBACK LOOP: routing info surfaced for diagnostics
+        "routing_confidence": routing_confidence,
+        "routing_reasoning": routing_reasoning,
     }
     # Merge extra keys (questions_remaining, complexity, can_ship, etc.)
     for k, v in result.items():
