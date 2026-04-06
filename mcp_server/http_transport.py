@@ -16,7 +16,7 @@ from contextvars import ContextVar
 from fastapi import FastAPI, Request, Response, HTTPException, Header
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 # Per-request NEUTRON_ROOT — avoids race conditions across async handlers
 _current_neutron_root: ContextVar[str | None] = ContextVar("current_neutron_root", default=None)
@@ -102,10 +102,30 @@ def create_app() -> FastAPI:
     async def create_key(
         label: str,
         neutron_root: str | None = None,
-        rate_limit: int = 60,
+        rate_limit: int = Field(default=60, ge=1, le=10000),
         x_neutron_api_key: str = Header(...),
     ):
         """Create a new API key."""
+        # Validate neutron_root: must be a real path inside an approved parent tree.
+        # Prevents cross-tenant key registration (e.g., key for "/etc" or "../../other-tenant").
+        if neutron_root is not None:
+            from pathlib import Path
+            try:
+                nroot = Path(neutron_root).resolve()
+            except Exception:
+                raise HTTPException(status_code=400, detail="Invalid neutron_root path")
+            # Must be a subdirectory of an approved parent
+            _SERVER_ROOT = Path(os.environ.get("NEUTRON_ROOT", "/tmp"))
+            try:
+                nroot.relative_to(_SERVER_ROOT)
+            except ValueError:
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        f"neutron_root must be inside the NEUTRON server root ({_SERVER_ROOT}). "
+                        f"Got: {neutron_root}"
+                    ),
+                )
         # Rate limit check
         rl_allowed, rl_err = auth.check_rate_limit(x_neutron_api_key)
         if not rl_allowed:
@@ -195,15 +215,39 @@ def create_app() -> FastAPI:
         from mcp_server import transport as _transport_mod
         results = []
         for req in body:
-            r = _handle_rpc(req)
-            if r is not None:
-                results.append(r)
+            # Set ContextVar per-request to ensure clean isolation within the batch.
+            # Each iteration gets its own ContextVar copy when we .set() again.
+            if api_key != "_anonymous" and resolved_root:
+                _current_neutron_root.set(resolved_root)
+            try:
+                r = _handle_rpc(req)
+                if r is not None:
+                    results.append(r)
+            except Exception as e:
+                # Catch per-request errors so one bad request doesn't kill the whole batch
+                results.append({
+                    "jsonrpc": "2.0",
+                    "id": req.get("id"),
+                    "error": {"code": -32603, "message": "Internal error processing request"},
+                })
         return JSONResponse(content=results)
 
     return app
 
 
 # ─── Direct run ────────────────────────────────────────────────────────────────
+
+def get_current_neutron_root() -> str | None:
+    """
+    Read the per-request NEUTRON_ROOT set by the HTTP transport.
+
+    Use this INSTEAD of os.environ.get("NEUTRON_ROOT") inside request handlers.
+    os.environ is shared globally — ContextVar is per-request in async contexts.
+
+    Returns None if called outside an MCP HTTP request (e.g., in stdio mode).
+    """
+    return _current_neutron_root.get()
+
 
 def run(port: int = 3100, host: str = "127.0.0.1"):
     """Run HTTP server directly (bypasses uvicorn CLI)."""

@@ -34,9 +34,6 @@ _rate_buckets: dict[str, _RateBucket] = defaultdict(lambda: _RateBucket(
     tokens=60, last_refill=time.time(), rate=60
 ))
 
-# Per-key neutron roots resolved from API keys
-_key_roots: dict[str, str] = {}
-
 
 def reset_rate_limit(key: str):
     """Reset rate limit for a key (e.g., on violation)."""
@@ -75,17 +72,14 @@ def check_rate_limit(api_key: str) -> tuple[bool, str]:
 def resolve_neutron_root(api_key: str) -> str | None:
     """
     Resolve NEUTRON_ROOT for an authenticated API key.
-    Caches in memory for performance.
+    Validates against config on every call to detect revocations immediately.
+    Does NOT cache — avoids stale cache from revoked keys remaining active.
     """
-    if api_key in _key_roots:
-        return _key_roots[api_key]
-
     cfg = _get_config()
     valid, root = cfg.validate_api_key(api_key)
-    if valid and root:
-        _key_roots[api_key] = root
-        return root
-    return None
+    # NO cache: cfg.validate_api_key() checks `enabled` flag on every call.
+    # Revoked keys are detected immediately without server restart.
+    return root if valid else None
 
 
 def authenticate(request_headers: dict) -> tuple[bool, str, str]:
@@ -124,5 +118,8 @@ def authenticate(request_headers: dict) -> tuple[bool, str, str]:
 
 
 def set_neutron_root_for_key(api_key: str, root: str):
-    """Manually set NEUTRON_ROOT for a key (e.g., after config reload)."""
-    _key_roots[api_key] = root
+    """
+    DEPRECATED: caching removed. Config is re-validated on every request.
+    Kept for API compatibility only — does nothing.
+    """
+    pass  # No-op: resolve_neutron_root() re-validates from config every call

@@ -548,63 +548,24 @@ def _sync_to_hub(context: dict) -> dict:
         return len(new_entries) - skipped if skipped else len(new_entries)
 
     def _append_decisions(decs: list[dict]) -> int:
+        """Append decisions to hub decisions.json with proper ID assignment."""
         if not decs:
             return 0
+        # Read existing to compute max ID (done inside _safe_json_write's lock to prevent race)
+        # Collect existing IDs via a read-outside-lock pattern: read max, then write
+        # _safe_json_write merges with existing, but we need to assign IDs before merge
+        # Solution: assign provisional IDs that won't conflict (use negative offsets)
         entries = [
             {
-                "id": 0,
+                # Provisional ID: negative to distinguish from existing, fix post-merge
+                "id": -(i + 1),
                 "timestamp": datetime.now().isoformat(),
                 "decision": d.get("decision", ""),
                 "context": f"Synced from {project_name}",
                 "outcome": d.get("outcome", "applied"),
                 "_synced_from": project_name,
             }
-            for d in decs[:20]
-        ]
-        return _safe_json_write(hub_decisions, entries)
-
-    def _update_index(entries_count: int, decisions_count: int) -> bool:
-        idx = []
-        lock_path = str(hub_index.with_suffix(".lock"))
-        lock = filelock.FileLock(lock_path, timeout=10)
-        with lock:
-            if hub_index.exists():
-                try:
-                    idx = _json.loads(hub_index.read_text())
-                except Exception:
-                    idx = []
-            now = datetime.now().isoformat()
-            updated = False
-            for entry in idx:
-                if entry.get("project") == project_name:
-                    entry["last_sync"] = now
-                    entry["entries_synced"] = entries_count
-                    entry["decisions_synced"] = decisions_count
-                    updated = True
-            if not updated:
-                idx.append({
-                    "project": project_name,
-                    "local_root": str(local_path),
-                    "last_sync": now,
-                    "entries_synced": entries_count,
-                    "decisions_synced": decisions_count,
-                })
-            _atomic_write_md(hub_index, _json.dumps(idx, indent=2))
-        return True
-
-    def _append_decisions(decs: list[dict]) -> int:
-        if not decs:
-            return 0
-        entries = [
-            {
-                "id": 0,
-                "timestamp": datetime.now().isoformat(),
-                "decision": d.get("decision", ""),
-                "context": f"Synced from {project_name}",
-                "outcome": d.get("outcome", "applied"),
-                "_synced_from": project_name,
-            }
-            for d in decs[:20]
+            for i, d in enumerate(decs[:20])
         ]
         return _safe_json_write(hub_decisions, entries)
 

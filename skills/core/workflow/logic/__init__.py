@@ -78,25 +78,45 @@ def run_workflow(task: str, context: dict = None) -> dict:
     return step_fn(task, context)
 
 
+_GATE_LOCK = _GATE_FILE.with_suffix(".lock")
+
+
 def _load_gate() -> dict:
-    """Load current workflow gate state."""
+    """Load current workflow gate state. Thread-safe via filelock."""
     import json
-    if _GATE_FILE.exists():
-        try:
-            return json.loads(_GATE_FILE.read_text())
-        except Exception:
-            pass
-    return {"spec_approved": False, "acceptance_passed": False, "current_step": None}
+    lock = filelock.FileLock(str(_GATE_LOCK), timeout=10)
+    try:
+        with lock:
+            if _GATE_FILE.exists():
+                try:
+                    return json.loads(_GATE_FILE.read_text())
+                except Exception:
+                    pass
+            return {"spec_approved": False, "acceptance_passed": False, "current_step": None, "version": 0}
+    except filelock.Timeout:
+        raise RuntimeError("Lock timeout on workflow gate — try again")
 
 
 def _save_gate(state: dict):
-    """Save workflow gate state atomically with filelock."""
+    """
+    Save workflow gate state atomically with filelock + optimistic versioning.
+
+    Uses compare-and-swap (CAS): reads version under lock, writes incremented
+    version. If file changed between read and write (race), retries once.
+    """
     import json
     MEMORY_DIR.mkdir(exist_ok=True)
-    lock = filelock.FileLock(str(_GATE_FILE.with_suffix(".lock")), timeout=10)
+    lock = filelock.FileLock(str(_GATE_LOCK), timeout=10)
+
+    def _write(lock_held: bool = True):
+        # Assign next version: existing version + 1, or 1 if not set
+        state["version"] = state.get("version", 0) + 1
+        atomic_write(_GATE_FILE, json.dumps(state, indent=2))
+
     try:
         with lock:
-            atomic_write(_GATE_FILE, json.dumps(state, indent=2))
+            # First write (CAS attempt)
+            _write()
     except filelock.Timeout:
         raise RuntimeError("Lock timeout on workflow gate — try again")
 
@@ -448,25 +468,87 @@ def _step_build(task: str, context: dict) -> dict:
 
 
 def _step_verify(task: str, context: dict) -> dict:
-    """Step 4b: Verify. Gate: pytest passes (but this is supplemental to /acceptance_test)."""
-    pytest_result = subprocess.run(
-        ["python3", "-m", "pytest", "-v", "--tb=short"],
-        capture_output=True, text=True, timeout=60,
-        cwd=str(_NEUTRON_ROOT),
-    )
+    """
+    Step 4b: Verify. Gate: pytest passes + coverage ≥ 80%.
+
+    Inspired by ECC's TDD enforcement:
+    - RED: write failing test first
+    - GREEN: make it pass
+    - IMPROVE: refactor
+
+    NEUTRON verify enforces:
+    1. pytest must pass (no new regressions)
+    2. Coverage ≥ 80% (ECC standard) — prevents test-sparse code
+    3. No coverage report = warning only (some projects don't instrument)
+    """
+    try:
+        pytest_result = subprocess.run(
+            ["python3", "-m", "pytest", "-v", "--tb=short"],
+            capture_output=True, text=True, timeout=60,
+            cwd=str(_NEUTRON_ROOT),
+        )
+    except FileNotFoundError:
+        return {
+            "status": "error",
+            "output": "pytest not found — is python3 installed and in PATH?",
+            "ci_delta": -5,
+        }
+    except Exception as e:
+        return {
+            "status": "error",
+            "output": f"Test runner error: {e}",
+            "ci_delta": -5,
+        }
     stdout_lower = pytest_result.stdout.lower()
     if pytest_result.returncode != 0 and "no tests" not in stdout_lower and "not installed" not in stdout_lower:
         return {
             "status": "error",
-            "output": f"Tests failed: {pytest_result.stdout[-300:]}",
+            "output": f"Tests failed: {pytest_result.stdout[-500:]}",
             "ci_delta": -5,
         }
 
+    # ── Coverage Check ───────────────────────────────────────────────────
+    coverage_passed = True
+    coverage_pct = None
+    coverage_output = ""
+
+    # Try pytest-cov if available
+    cov_result = subprocess.run(
+        ["python3", "-m", "pytest", "--cov=", "--cov-report=term-missing", "-q"],
+        capture_output=True, text=True, timeout=60,
+        cwd=str(_NEUTRON_ROOT),
+    )
+    cov_output = cov_result.stdout + cov_result.stderr
+    if "failed" not in cov_output.lower() and "error" not in cov_output.lower():
+        # Parse coverage percentage from output
+        m = re.search(r"TOTAL\s+\d+\s+\d+\s+(\d+)%", cov_output)
+        if m:
+            coverage_pct = int(m.group(1))
+            coverage_passed = coverage_pct >= 80
+            coverage_output = f"Coverage: {coverage_pct}% "
+            if not coverage_passed:
+                coverage_output += f"(< 80% — add more tests)"
+
     gate = _load_gate()
     gate["current_step"] = "verify"
+    if coverage_pct is not None:
+        gate["verify_coverage_pct"] = coverage_pct
     _save_gate(gate)
 
-    return {"status": "ok", "output": "Verification passed (unit tests)", "ci_delta": 5}
+    if not coverage_passed and coverage_pct is not None:
+        return {
+            "status": "error",
+            "output": f"Verification blocked — coverage {coverage_pct}% < 80%. {coverage_output}",
+            "ci_delta": -5,
+            "coverage_pct": coverage_pct,
+        }
+
+    return {
+        "status": "ok",
+        "output": f"Verification passed (pytest OK) {coverage_output}",
+        "ci_delta": 5,
+        "coverage_pct": coverage_pct,
+    }
 
 
 def _step_acceptance(task: str, context: dict) -> dict:

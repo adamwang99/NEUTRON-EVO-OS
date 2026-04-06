@@ -21,6 +21,7 @@ Commands:
   neutron route <task>    Route task to skill
   neutron log             Show today's memory log
   neutron decisions       Show recent user decisions
+  neutron regress        Regression guard: smoke|snapshot|check [--force]
 
 Examples:
   neutron discover "Build a trading bot"
@@ -502,6 +503,59 @@ def cmd_dream(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_regress(args: argparse.Namespace) -> int:
+    """
+    Regression Guard CLI.
+
+    neutron regress --snapshot  # Record golden outputs (run once after stable session)
+    neutron regress --check     # Run regression check vs golden baseline
+    neutron regress --force     # Run check, proceed even if regressions found
+    neutron regress             # Run smoke test only (no baseline needed)
+    """
+    from engine.regression_guard import snapshot, smoke_test, check
+
+    if args.snapshot:
+        r = snapshot()
+        print(_header("REGRESSION — SNAPSHOT SAVED"))
+        print(f"  Skills golden: {r['skills_ok']}")
+        print(f"  Imports golden: {r['imports_ok']}")
+        print(f"  Baseline: {r['smoke_count']} smoke + {r['import_count']} imports")
+        print()
+        print("  ✅ Golden baseline established.")
+        print("  Next edit to engine/* or skills/* will be checked against this.")
+        return 0
+
+    if args.check or args.files:
+        changed = [f.strip() for f in (args.files or []) if f.strip()]
+        r = check(changed_files=changed)
+        print(_header("REGRESSION CHECK"))
+        print(f"  Status: {r['status']}")
+        print(f"  Snapshot: {r.get('snapshot_at', 'unknown')}")
+        if r.get('changed_modules'):
+            print(f"  Changed: {', '.join(r['changed_modules'])}")
+        print()
+        print(r.get("output", ""))
+        if not r["ok"] and not args.force:
+            print("\n⛔ REGRESSION DETECTED — edit NOT applied.")
+            print("Options:")
+            print("  neutron regress --snapshot  # Accept new state as baseline")
+            print("  neutron regress --check --force  # Proceed anyway")
+            return 1
+        return 0
+
+    # Default: smoke test only
+    r = smoke_test()
+    print(_header("REGRESSION — SMOKE TEST"))
+    print(f"  Skills: {r['skills_ok']}/{r['skills_total']} ✅")
+    print(f"  Imports: {r['imports_ok']}/{r['imports_total']} ✅")
+    if r["status"] == "ok":
+        print("\n✅ All critical paths healthy.")
+        print("  Run --snapshot to establish golden baseline for regression detection.")
+    else:
+        print("\n⚠️  Smoke test FAILED — some critical paths are broken.")
+    return 0
+
+
 def cmd_version(args: argparse.Namespace) -> int:
     """Show version info."""
     from engine.expert_skill_router import audit as engine_audit
@@ -762,6 +816,9 @@ Examples:
   neutron audit
   neutron log
   neutron decisions
+  neutron regress --snapshot     Establish golden baseline (run once)
+  neutron regress --check        Check for regressions after edit
+  neutron regress                Smoke test — fast health check
         """,
     )
 
@@ -898,7 +955,94 @@ Examples:
     p.add_argument("--dry-run", action="store_true", help="Show what would be backed up without backing up")
     p.set_defaults(func=cmd_protect)
 
+    # regress
+    p = sub.add_parser("regress", help="Regression Guard — smoke test, snapshot, and regression check")
+    p.add_argument("--snapshot", action="store_true", help="Record golden snapshot of current skill outputs")
+    p.add_argument("--check", action="store_true", help="Run regression check vs golden baseline")
+    p.add_argument("--force", action="store_true", help="Proceed even if regressions detected")
+    p.add_argument("files", nargs="*", help="Changed files (auto-detected if omitted)")
+    p.set_defaults(func=cmd_regress)
+
+    # snapshot — save/load context state for recovery after compaction
+    p = sub.add_parser("snapshot", help="Save or load context snapshot (recovery after /compact)")
+    p.add_argument("action", nargs="?", default="status",
+                   choices=["save", "load", "clear", "status"],
+                   help="save=write current state, load=read, clear=delete, status=show summary")
+    p.add_argument("--task", dest="task", help="Task description for snapshot")
+    p.add_argument("--step", dest="step", help="Current workflow step")
+    p.add_argument("--files", dest="files", help="Comma-separated list of modified files")
+    p.add_argument("--pending", dest="pending", help="Comma-separated list of pending fixes")
+    p.add_argument("--notes", dest="notes", help="Free-form notes")
+    p.set_defaults(func=cmd_snapshot)
+
     return parser
+
+
+# ─── Snapshot (Context Recovery after /compact) ───────────────────────────────
+
+def cmd_snapshot(args: argparse.Namespace) -> int:
+    """
+    Save or load a context snapshot for session recovery.
+    This is the answer to context compaction: even if /compact fires,
+    the next session can see what was in progress via:
+      neutron snapshot load
+    And SessionStart hook shows it automatically.
+    """
+    from engine.context_snapshot import save_snapshot, load_snapshot, clear_snapshot, get_snapshot_summary
+
+    action = args.action
+
+    if action == "save":
+        modified = []
+        if args.files:
+            modified = [f.strip() for f in args.files.split(",") if f.strip()]
+
+        pending = []
+        if args.pending:
+            pending = [p.strip() for p in args.pending.split(",") if p.strip()]
+
+        decisions = []
+        if args.notes:
+            decisions = [args.notes]
+
+        r = save_snapshot(
+            task=args.task or "",
+            pending_fixes=pending,
+            modified_files=modified,
+            decisions=decisions,
+            current_step=args.step or "",
+            notes=args.notes or "",
+            test_status="unknown",
+        )
+        print(f"✅ Snapshot saved at {r['snapshot_at']}")
+        return 0
+
+    if action == "load":
+        data = load_snapshot()
+        if not data:
+            print("No snapshot found (session was clean or snapshot is stale).")
+            return 0
+        summary = get_snapshot_summary()
+        if summary:
+            print("📋 Context snapshot:")
+            print(summary)
+        else:
+            print("No active context snapshot.")
+        return 0
+
+    if action == "clear":
+        r = clear_snapshot()
+        print(f"✅ {r['status']}")
+        return 0
+
+    # status (default)
+    summary = get_snapshot_summary()
+    if summary:
+        print("📋 Active snapshot:")
+        print(summary)
+    else:
+        print("No active snapshot — session is clean.")
+    return 0
 
 
 # ─── Main ────────────────────────────────────────────────────────────────────

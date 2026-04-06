@@ -1,7 +1,7 @@
 """NEUTRON-EVO-OS Engine — Core Python components."""
 from __future__ import annotations
 
-__version__ = "4.3.1"
+__version__ = "4.4.0"
 __all__ = [
     "NEUTRON_ROOT",
     "MEMORY_DIR",
@@ -15,6 +15,8 @@ __all__ = [
     "rating",
     "user_decisions",
     "learned_skill_builder",
+    "context_snapshot",
+    "regression_guard",
 ]
 
 from pathlib import Path
@@ -32,3 +34,30 @@ from . import skill_execution
 from . import rating
 from . import user_decisions
 from . import learned_skill_builder
+from . import context_snapshot
+
+# ── Session End Hook (atexit) ──────────────────────────────────────────────────
+# Triggers session-end.sh on Python process exit (normal or crash).
+# This is safe to call multiple times — shell script is idempotent.
+import atexit, os, subprocess
+
+_SESSION_END_SCRIPT = NEUTRON_ROOT / "hooks" / "session-end.sh"
+
+
+def _run_session_end():
+    if not _SESSION_END_SCRIPT.exists():
+        return
+    try:
+        # Use subprocess.DEVNULL to prevent blocking on broken pipe
+        subprocess.run(
+            ["bash", str(_SESSION_END_SCRIPT)],
+            cwd=str(NEUTRON_ROOT),
+            env={**os.environ, "NEUTRON_ROOT": str(NEUTRON_ROOT)},
+            timeout=30,
+            capture_output=True,
+        )
+    except Exception:
+        pass  # Best-effort: never block exit
+
+
+atexit.register(_run_session_end)

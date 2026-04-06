@@ -34,12 +34,28 @@ def _parse_frontmatter(file_path: Path) -> dict:
 
 
 def _is_real_module(init_file: Path) -> bool:
-    """True if the __init__.py has real content (not just a stub comment)."""
+    """
+    True if the __init__.py has real Python code (not just a stub comment).
+
+    Uses AST to detect actual function/class definitions, not just file length.
+    This correctly identifies stubs vs real implementations even for short files.
+    """
+    import ast
     if not init_file.exists():
         return False
-    content = init_file.read_text().strip()
-    # Stubs are < 50 chars; real modules have actual code
-    return len(content) > 50
+    try:
+        source = init_file.read_text()
+        if not source.strip():
+            return False
+        tree = ast.parse(source)
+        # Real modules have at least one function/class/def statement
+        for node in ast.walk(tree):
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                return True
+        return False
+    except (SyntaxError, ValueError):
+        # Can't parse — treat as stub
+        return False
 
 
 def discover_skills() -> dict:

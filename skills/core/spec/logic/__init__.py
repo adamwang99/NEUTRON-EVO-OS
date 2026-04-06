@@ -91,10 +91,18 @@ def _clear_state() -> None:
 # ─── Discovery Output Loader ──────────────────────────────────────────────────
 
 def _load_discovery_output() -> dict | None:
-    """Find and load the most recent DISCOVERY.md."""
+    """
+    Find and load the most recent DISCOVERY.md.
+
+    SECURITY: Only searches memory/ and _NEUTRON_ROOT (not recursive into
+    node_modules/vendor/etc). Limits depth to prevent searching large dependency trees.
+    """
     candidates = (
         list(_NEUTRON_ROOT.glob("DISCOVERY.md"))
-        + list(MEMORY_DIR.rglob("DISCOVERY.md"))
+        # SECURITY: limit to memory/ subdirectories only — NOT rglob into node_modules
+        + list((MEMORY_DIR).glob("*/DISCOVERY.md"))   # 1 level deep in memory/
+        + list((MEMORY_DIR / "discoveries").glob("DISCOVERY.md"))
+        + list((MEMORY_DIR / "discoveries").glob("*/DISCOVERY.md"))
     )
     for p in sorted(candidates, key=lambda f: (f.stat().st_mtime, str(f)), reverse=True):
         try:
@@ -421,6 +429,103 @@ def _generate_edge_cases(discovery_content: str, task: str, round1_answers: dict
     return scenarios[:5]  # Max 5
 
 
+# ─── Security Surface Derivation ────────────────────────────────────────────────
+
+def _derive_security_surface(task: str, discovery) -> dict:
+    """
+    Derive security surface from task and discovery.
+
+    Inspired by ultimate-guide's OWASP Top 10 + AgentShield methodology.
+    Not a full security audit — a checklist of security considerations to verify.
+    """
+    disc_lower = ((discovery.get("content", "") if discovery else "") + " " + task).lower()
+
+    result = {
+        "auth": [],
+        "data": [],
+        "input": [],
+        "api": [],
+    }
+
+    has_auth = any(k in disc_lower for k in ["auth", "login", "register", "user", "account", "password", "jwt"])
+    has_api = any(k in disc_lower for k in ["api", "endpoint", "server", "http", "rest"])
+    has_db = any(k in disc_lower for k in ["database", "postgres", "mysql", "mongodb", "sqlite", "redis"])
+    has_file = any(k in disc_lower for k in ["upload", "file", "import", "export", "media"])
+    has_payment = any(k in disc_lower for k in ["payment", "stripe", "billing", "pricing", "card"])
+    has_pii = any(k in disc_lower for k in ["user", "name", "email", "phone", "address", "pii", "personal"])
+
+    # Auth & Session
+    if has_auth:
+        result["auth"].extend([
+            "Passwords hashed (bcrypt/argon2, not MD5/SHA1)",
+            "Session tokens are httpOnly + secure + sameSite=strict",
+            "Brute force protection (rate limiting on login)",
+            "Session expiry: idle timeout < 30 min, absolute < 8h",
+            "JWT: short-lived access tokens (15min), refresh tokens for rotation",
+        ])
+    else:
+        result["auth"].append("No authentication required — if added later, use hashed passwords + secure sessions")
+
+    # Data Protection
+    if has_pii:
+        result["data"].extend([
+            "PII encrypted at rest (AES-256)",
+            "PII never logged (check: no email/name in logs)",
+            "PII redacted in error messages and stack traces",
+            "GDPR/CCPA: data export and deletion endpoints exist",
+        ])
+    else:
+        result["data"].append("No PII identified — if added later, encrypt and never log")
+
+    if has_db:
+        result["data"].extend([
+            "SQL injection prevented: parameterized queries only",
+            "Database credentials in env vars, not in code",
+            "Connection strings use least-privilege DB user",
+        ])
+
+    if has_payment:
+        result["data"].extend([
+            "Card data never touches our server (Stripe Elements / PCI DSS compliant)",
+            "Payment tokens stored, not raw card numbers",
+            "PCI DSS compliance verified",
+        ])
+
+    # Input Validation
+    result["input"].extend([
+        "All user input sanitized server-side (never trust client-side validation)",
+        "File uploads: validate MIME type, scan for malware, size limit enforced",
+        "HTML/escape output when rendering user content (XSS prevention)",
+        "Command injection: no user input in shell commands without sanitization",
+    ])
+
+    if has_file:
+        result["input"].extend([
+            "Uploaded files stored outside web root",
+            "Uploaded files served via signed URLs, not direct filesystem access",
+            "Filename sanitized (no path traversal: ../, null bytes)",
+        ])
+
+    # API Security
+    if has_api:
+        result["api"].extend([
+            "CORS: specific origins only, not wildcard *",
+            "Rate limiting: per-IP and per-API-key limits",
+            "API versioning: /v1/ /v2/ to prevent breaking clients",
+            "IDOR prevention: users can only access their own resources",
+            "Security headers: CSP, X-Frame-Options, X-Content-Type-Options, HSTS",
+        ])
+
+    # MCP tools / Agent integration (if NEUTRON is used)
+    result["api"].extend([
+        "MCP server: API key required for all non-public endpoints",
+        "NEUTRON hooks reviewed before adding new ones (shell injection risk)",
+        "Secrets: never in code, .env, or Claude Code output",
+    ])
+
+    return result
+
+
 # ─── SPEC.md Writer ──────────────────────────────────────────────────────────
 
 def _build_spec_content(
@@ -542,6 +647,25 @@ def _build_spec_content(
     lines.append("```")
     lines.append(f"{_derive_file_structure(task, discovery)}")
     lines.append("```")
+
+    # Security Surface (Round 4: Security Review)
+    # Inspired by ultimate-guide's OWASP Top 10 + AgentShield methodology
+    security_section = _derive_security_surface(task, discovery)
+    if security_section:
+        lines.append("\n## 9. Security Surface (OWASP Top 10 Review)")
+        lines.append("*(Inspired by claude-code-ultimate-guide security methodology)*")
+        lines.append("\n### Authentication & Session")
+        for item in security_section.get("auth", []):
+            lines.append(f"- [ ] {item}")
+        lines.append("\n### Data Protection")
+        for item in security_section.get("data", []):
+            lines.append(f"- [ ] {item}")
+        lines.append("\n### Input Validation")
+        for item in security_section.get("input", []):
+            lines.append(f"- [ ] {item}")
+        lines.append("\n### API Security")
+        for item in security_section.get("api", []):
+            lines.append(f"- [ ] {item}")
 
     return "\n".join(lines)
 

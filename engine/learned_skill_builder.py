@@ -122,10 +122,32 @@ def distill_patterns(days: int = 14, top_n: int = 5) -> list[dict]:
 # ─── Skill registration ────────────────────────────────────────────────────────
 
 def _slugify(name: str) -> str:
-    """Convert a pattern name into a valid directory slug."""
+    """
+    Convert a pattern name into a valid directory slug AND Python identifier.
+
+    Guards:
+    - Hyphens → underscores (Python identifiers can't have hyphens)
+    - Leading digits → prefix with underscore
+    - Validates via str.isidentifier() before returning
+    """
     slug = re.sub(r"[^a-z0-9]+", "-", name.lower())
     slug = re.sub(r"^-|-$", "", slug)
-    return slug[:60]
+    slug = slug[:60]
+
+    # Ensure it's a valid Python identifier (prevents injection in generated code)
+    if not slug.isidentifier():
+        # Replace remaining invalid chars with underscores, collapse runs
+        slug = re.sub(r"[^a-z0-9_]", "_", slug)
+        slug = re.sub(r"_+", "_", slug)
+        slug = slug.strip("_")
+        # Prefix leading digit with underscore
+        if slug and slug[0].isdigit():
+            slug = "_" + slug
+
+    if not slug.isidentifier():
+        raise ValueError(f"Cannot produce a valid Python identifier from name: {name!r}")
+
+    return slug
 
 
 def register_learned_skill(
@@ -147,17 +169,15 @@ def register_learned_skill(
     logic_init = skill_dir / "logic" / "__init__.py"
     validation_init = skill_dir / "validation" / "__init__.py"
 
-    if skill_md.exists():
-        return {"status": "already_exists", "slug": slug, "path": str(skill_md)}
+    # Thread/process safe registration: lock to prevent duplicate slug race
+    REG_LOCK = LEARNED_DIR / ".register.lock"
+    lock = filelock.FileLock(str(REG_LOCK), timeout=10)
+    with lock:
+        if skill_md.exists():
+            return {"status": "already_exists", "slug": slug, "path": str(skill_md)}
 
-    # Create directories
-    skill_dir.mkdir(parents=True, exist_ok=True)
-    (skill_dir / "logic").mkdir(exist_ok=True)
-    (skill_dir / "validation").mkdir(exist_ok=True)
-
-    # Write SKILL.md
-    today = datetime.now().strftime("%Y-%m-%d")
-    skill_content = f"""---
+        today = datetime.now().strftime("%Y-%m-%d")
+        skill_content = f"""---
 name: {slug}
 type: learned
 version: 0.1.0
@@ -180,36 +200,36 @@ last_dream: {today}
 ### Notes
 {notes}
 """
-    if source_pattern:
-        skill_content += f"\n### Source\nDistilled from: {source_pattern}\n"
+        if source_pattern:
+            skill_content += f"\n### Source\nDistilled from: {source_pattern}\n"
 
-    skill_md.write_text(skill_content)
+        # Create directories atomically — fail if already exists (idempotent after lock)
+        skill_dir.mkdir(parents=True, exist_ok=False)
+        (skill_dir / "logic").mkdir(exist_ok=True)
+        (skill_dir / "validation").mkdir(exist_ok=True)
 
-    # Write logic stub
-    logic_init.write_text(f'''"""Learned Skill: {name}"""
+        # Atomic writes for both SKILL.md and logic stub (no TOCTOU since we hold lock)
+        skill_md.write_text(skill_content)
+
+        # Write logic stub — slug is a valid Python identifier (guaranteed by _slugify)
+        # Use repr() to safely embed name in docstring (prevents docstring injection)
+        safe_name = repr(name)  # json.dumps would also work; repr() escapes embedded quotes
+        logic_init.write_text(f'''"""Learned Skill: {slug}"""
 from __future__ import annotations
 
 def run_learned_{slug}(task: str, context: dict = None) -> dict:
-    """
-    Learned skill: {name}
-    type: learned | initial CI: 35
-    """
+    """Learned skill: {safe_name} | type: learned | initial CI: 35"""
     from engine.skill_registry import discover_learned_skills
     from engine.expert_skill_router import update_ci
 
-    # Record invocation
     _record_invocation("{slug}")
-
-    # Execute the skill logic
-    result = {{"status": "ok", "output": "{name}", "ci_delta": 3}}
-
-    # Update CI
+    result = {{"status": "ok", "output": {safe_name}, "ci_delta": 3}}
     update_ci("{slug}", 3)
     return result
 ''')
 
-    # Write validation stub
-    validation_init.write_text(f'''"""Learned Skill Validation: {name}"""
+        # Write validation stub — same slug safety applies
+        validation_init.write_text(f'''"""Learned Skill Validation: {slug}"""
 from __future__ import annotations
 from typing import Union
 
@@ -217,8 +237,8 @@ def validate_learned_{slug}(inputs: dict) -> Union[bool, str]:
     return True
 ''')
 
-    # Record invocation
-    _record_invocation(slug)
+        # Record invocation (slug is now a variable, was previously literal "{slug}" string)
+        _record_invocation(slug)
 
     return {
         "status": "registered",
@@ -392,14 +412,16 @@ def _action_promote(task: str, context: dict) -> dict:
     if core_dir.exists():
         return {"status": "error", "output": f"Core skill already exists: {slug}", "ci_delta": 0}
 
+    # copytree requires destination to not exist — safe since we checked above
     shutil.copytree(learned_dir, core_dir)
 
-    # Update SKILL.md in core
+    # Atomic write for SKILL.md update (no TOCTOU — dir just created, no race)
+    from engine._atomic import atomic_write
     core_md = core_dir / "SKILL.md"
     content = core_md.read_text()
     content = content.replace('type: learned', 'type: core')
     content = re.sub(r"^CI: \d+", "CI: 70", content, flags=re.MULTILINE)
-    core_md.write_text(content)
+    atomic_write(core_md, content)
 
     # Update CI +10
     update_ci(slug, 10)

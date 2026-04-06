@@ -62,8 +62,21 @@ def _atomic_write(path: Path, content: str) -> None:
         raise
 MAX_PENDING_AGE_DAYS = 7    # auto-archive pending entries older than this
 
-# Re-entrancy guard: prevents concurrent dream cycles
-_dream_running = threading.Event()
+# Re-entrancy guard: prevents concurrent dream cycles.
+# Uses a filelock file instead of threading.Event so it works ACROSS PROCESSES.
+# Lock path is re-resolved each call so monkeypatch can override MEMORY_DIR in tests.
+_DREAM_LOCK_CACHE: filelock.FileLock | None = None
+
+
+def _get_dream_lock() -> "filelock.FileLock":
+    """Get or create the dream cycle filelock (process-safe, respects MEMORY_DIR at call time)."""
+    global _DREAM_LOCK_CACHE
+    import filelock as _filelock
+    # Always re-resolve path so monkeypatch can override MEMORY_DIR in tests
+    lock_path = str(MEMORY_DIR / ".dream.lock")
+    # Create fresh FileLock each call — path resolution is fast, avoids stale caches
+    _DREAM_LOCK_CACHE = _filelock.FileLock(lock_path, timeout=5)
+    return _DREAM_LOCK_CACHE
 
 # Sentinel file — if this file exists, observer should NOT restart dream cycle
 _DREAM_SENTINEL = MEMORY_DIR / ".dream_active"
@@ -446,21 +459,28 @@ def dream_cycle(json_output: bool = True) -> dict | str:
         json_output: if True (default), returns a JSON string (for CLI output).
                      if False, returns a dict (for programmatic use).
     """
-    if _dream_running.is_set():
-        result = {"status": "skipped", "reason": "dream cycle already running"}
-        return json.dumps(result) if json_output else result
-
-    _dream_running.set()
+    import filelock as _filelock
+    lock = _get_dream_lock()
+    acquired = False
     try:
+        acquired = lock.acquire(timeout=0)  # non-blocking — fail fast if already running
+        if not acquired:
+            result = {"status": "skipped", "reason": "dream cycle already running in another process"}
+            return json.dumps(result) if json_output else result
+
         _DREAM_SENTINEL.write_text(datetime.now().isoformat())
         result = _dream_cycle_inner()
         return json.dumps(result) if json_output else result
     finally:
-        _dream_running.clear()
-        try:
-            _DREAM_SENTINEL.unlink(missing_ok=True)
-        except Exception as e:
-            logger.error(f"Dream Cycle: failed to remove sentinel — {e}")
+        if acquired:
+            try:
+                _DREAM_SENTINEL.unlink(missing_ok=True)
+            except Exception as e:
+                logger.error(f"Dream Cycle: failed to remove sentinel — {e}")
+            try:
+                lock.release()
+            except Exception:
+                pass
 
 
 def _dream_cycle_inner() -> dict:

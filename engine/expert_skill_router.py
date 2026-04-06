@@ -11,6 +11,8 @@ import filelock
 from pathlib import Path
 from typing import Optional
 
+from engine._atomic import atomic_write
+
 NEUTRON_ROOT = Path(os.environ.get("NEUTRON_ROOT", Path(__file__).parent.parent))
 LEDGER_PATH = NEUTRON_ROOT / "PERFORMANCE_LEDGER.md"
 LOCK_PATH = LEDGER_PATH.with_suffix(".lock")
@@ -126,8 +128,8 @@ def route_task(task: str, context: dict = None) -> dict:
             "CI": entry["CI"],
         }
 
-    # Sort by match score desc, then CI desc
-    candidates.sort(key=lambda x: (x[1], x[2]), reverse=True)
+    # Sort by match score desc, then CI desc (numeric, not lexicographic)
+    candidates.sort(key=lambda x: (x[1], x[2] * 100), reverse=True)
     best_skill, match_score, ci = candidates[0]
 
     confidence = min(0.4 + (match_score * 0.15), 0.95)
@@ -157,7 +159,11 @@ def execute_skill(skill_path: str, task: str, context: dict = None) -> dict:
     """
     from engine import skill_execution
     # skill_path: 'skills/core/<name>/SKILL.md' — index 2 = skill name
-    skill_name = skill_path.split("/")[2]
+    # Guard: validate path has at least 3 segments before split
+    parts = skill_path.split("/")
+    if len(parts) < 3:
+        return {"status": "error", "output": f"Invalid skill_path: {skill_path!r}", "ci_delta": 0}
+    skill_name = parts[2]
     # Route first to get confidence score
     route_result = route_task(task, context)
     ctx = dict(context) if context else {}
@@ -194,14 +200,14 @@ def update_ci(skill_name: str, delta: int) -> dict:
         if count == 0:
             return {"CI": entry["CI"], "error": f"Skill '{skill_name}' not found in ledger"}
 
-        LEDGER_PATH.write_text(new_content)
+        atomic_write(LEDGER_PATH, new_content)
         return {"skill": skill_name, "CI": new_ci, "tasks_completed": new_tasks, "last_active": new_active}
 
 
 def audit() -> dict:
     """
     Full system CI health check.
-    Returns: {status, blocked_skills, healthy_skills, overall_ci}
+    Returns: {status, blocked_skills, healthy_skills, overall_ci, rating_summary}
     """
     entries = get_all_skill_entries()
     blocked = [s for s, d in entries.items() if d["CI"] < CI_BLOCKED]
@@ -211,10 +217,18 @@ def audit() -> dict:
     else:
         avg_ci = 50
 
+    # Include rating summary from rating system
+    try:
+        from engine.rating import summarize as rating_summarize
+        rating_summary = rating_summarize()
+    except Exception:
+        rating_summary = None
+
     return {
         "status": "healthy" if not blocked else "degraded",
         "blocked_skills": blocked,
         "healthy_skills": healthy,
         "overall_ci": round(avg_ci, 1),
         "skill_count": len(entries),
+        "rating_summary": rating_summary,
     }

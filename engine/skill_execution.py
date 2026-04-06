@@ -7,12 +7,13 @@ from __future__ import annotations
 import importlib
 import os
 import sys
+import tempfile
 import time
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
-from filelock import FileLock
+from filelock import FileLock, Timeout
 
 NEUTRON_ROOT = Path(os.environ.get("NEUTRON_ROOT", Path(__file__).parent.parent))
 MEMORY_DIR = NEUTRON_ROOT / "memory"
@@ -104,7 +105,74 @@ def run(skill_name: str, task: str, context: dict = None) -> dict:
     for k, v in result.items():
         if k not in ret:
             ret[k] = v
+
+    # ── Auto-snapshot on every skill execution ───────────────────────────
+    # After every skill run, checkpoint the context so session recovery
+    # works even if context is compacted mid-session.
+    # Only snapshot on non-trivial runs (skip notifications/quick checks).
+    _auto_snapshot(skill_name, task, ret, ret["status"], duration_ms)
+
     return ret
+
+
+# ── Auto-snapshot ──────────────────────────────────────────────────────────────
+
+def _auto_snapshot(skill_name: str, task: str, result: dict, status: str, duration_ms: int):
+    """
+    Auto-save a context snapshot after skill execution.
+
+    This is the primary resilience mechanism for context compaction:
+    every skill execution is checkpointed to disk. If context is compacted,
+    the next session (via SessionStart hook) sees what was in progress.
+
+    Guard: skips quick-status calls (duration < 50ms) to avoid polluting
+    the snapshot with trivial operations like 'status' or 'list' skills.
+    """
+    # Skip quick calls — they are noise in the snapshot
+    if duration_ms < 50:
+        return
+    # Skip known trivial status actions
+    if skill_name in ("engine",) and ("status" in task.lower() or "audit" in task.lower()):
+        return
+
+    try:
+        import threading
+        from engine.context_snapshot import save_snapshot
+        # Run in a thread to avoid adding latency to skill execution
+        # The snapshot write itself is fast (filelock + atomic write)
+        t = threading.Thread(
+            target=_snapshot_worker,
+            args=(skill_name, task, result, status, duration_ms),
+            daemon=True,
+        )
+        t.start()
+    except Exception:
+        pass  # Best-effort: never block skill execution
+
+
+def _snapshot_worker(skill_name: str, task: str, result: dict, status: str, duration_ms: int):
+    """Worker that actually writes the snapshot. Runs in background thread."""
+    import logging as _snap_log
+    _logger = _snap_log.getLogger("neutron-evo-os.snapshot")
+    try:
+        from engine.context_snapshot import save_snapshot
+        test_status = "passed" if status in ("ok", "completed", "promoted", "registered") else \
+                      "failed" if status in ("error", "execution_error", "validation_failed", "blocked") else \
+                      "unknown"
+
+        save_snapshot(
+            task=f"[{skill_name}] {task[:80]}",
+            modified_files=[skill_name],  # the skill being executed
+            decisions=[],
+            current_step=skill_name,
+            notes=f"{status} | {duration_ms}ms | {str(result.get('output', ''))[:80]}",
+            test_status=test_status,
+        )
+    except Exception as e:
+        # Log failures so silent resilience loss is detectable, not invisible
+        _logger.warning(
+            f"Context snapshot failed for skill={skill_name} status={status}: {e}"
+        )
 
 
 def _run_validation(skill_name: str, inputs: dict) -> Optional[str]:
@@ -183,11 +251,19 @@ def _execute_logic(skill_name: str, task: str, context: dict) -> dict:
 
 
 def _write_execution_log(skill_name: str, task: str, result: dict):
-    """Append skill execution to today's daily log (atomic write via filelock)."""
+    """
+    Append skill execution to today's daily log (filelock + atomic write).
+
+    Enforces MAX_SESSION_LOG_LINES hard cap:
+    - If appending would exceed 500 lines, trigger Dream Cycle to archive
+      old content, then keep only the most recent 500 lines.
+    - This prevents log files from growing unbounded in long sessions.
+    """
+    import os as _os
     MEMORY_DIR.mkdir(exist_ok=True)
     today = datetime.now().strftime("%Y-%m-%d")
     log_path = MEMORY_DIR / f"{today}.md"
-    lock_path = MEMORY_DIR / f"{today}.lock"
+    log_lock_path = log_path.with_suffix(".lock")
 
     timestamp = datetime.now().strftime("%H:%M")
     ci_delta = result.get("ci_delta", 0)
@@ -202,15 +278,88 @@ def _write_execution_log(skill_name: str, task: str, result: dict):
         f"- Notes: {output}\n"
     )
 
-    # Atomic write: hold lock for the full read+write to prevent concurrent corruption.
-    # The lock file name matches the log file name so FileLock serializes writes to the same log.
-    log_lock_path = log_path.with_suffix(".lock")
-    with FileLock(str(log_lock_path), timeout=10):
-        if log_path.exists():
+    # Filelock prevents concurrent writes to the same log.
+    # Atomic write (temp + fsync + rename) prevents crash corruption.
+    try:
+        with FileLock(str(log_lock_path), timeout=10):
+            if log_path.exists():
+                try:
+                    existing = log_path.read_text(errors="replace")
+                except Exception:
+                    existing = f"# {today}\n"
+            else:
+                existing = f"# {today}\n"
+            new_content = existing + entry + "\n"
+
+            # ── HARD CAP: enforce MAX_SESSION_LOG_LINES ──────────────────
+            new_line_count = new_content.count("\n")
+            MAX_LINES = 500
+            if new_line_count > MAX_LINES:
+                # Trigger archiving via Dream Cycle, keep only most recent lines
+                _trigger_dream_archive(log_path, today, new_content, MAX_LINES)
+                return  # Archive handled; don't write raw log
+
+            # Atomic write: temp file → fsync → rename
+            fd = tempfile.NamedTemporaryFile(
+                mode="w", dir=log_path.parent, delete=False, encoding="utf-8"
+            )
             try:
-                existing = log_path.read_text(errors="replace")
+                fd.write(new_content)
+                fd.flush()
+                _os.fsync(fd.fileno())
+                fd.close()
+                _os.replace(fd.name, str(log_path))
             except Exception:
-                existing = ""  # Corrupted file — start fresh
-            log_path.write_text(existing + entry)
-        else:
-            log_path.write_text(f"# {today}\n{entry}\n")
+                try:
+                    _os.unlink(fd.name)
+                except Exception:
+                    pass
+                raise
+    except Timeout:
+        pass  # Best-effort: log append is supplementary
+
+
+def _trigger_dream_archive(log_path: Path, today: str, new_content: str, max_lines: int):
+    """
+    Archive the oversized log via Dream Cycle, then overwrite with trimmed content.
+
+    Called when today's log would exceed MAX_SESSION_LOG_LINES lines.
+    The Dream Cycle archives old content; we keep the most recent max_lines.
+    This prevents unbounded log growth while preserving recent context.
+    """
+    import os as _os
+    import threading
+
+    # Keep only the most recent max_lines lines
+    lines = new_content.splitlines()
+    trimmed = "\n".join(lines[-max_lines:])
+    header = f"# {today}\n# (Log trimmed — older entries archived by Dream Cycle)\n"
+    final_content = header + trimmed
+
+    # Atomic overwrite with trimmed content
+    fd = tempfile.NamedTemporaryFile(
+        mode="w", dir=log_path.parent, delete=False, encoding="utf-8"
+    )
+    try:
+        fd.write(final_content)
+        fd.flush()
+        _os.fsync(fd.fileno())
+        fd.close()
+        _os.replace(fd.name, str(log_path))
+    except Exception:
+        try:
+            _os.unlink(fd.name)
+        except Exception:
+            pass
+        return  # Best-effort: if archive fails, keep the trimmed file
+
+    # Trigger Dream Cycle asynchronously to do proper archiving
+    def _async_dream():
+        try:
+            from engine.dream_engine import dream_cycle
+            dream_cycle(json_output=False)
+        except Exception:
+            pass  # Best-effort
+
+    t = threading.Thread(target=_async_dream, daemon=True)
+    t.start()

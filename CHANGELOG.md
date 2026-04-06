@@ -4,6 +4,56 @@ All notable changes are documented here. The format follows [Keep a Changelog](h
 
 ---
 
+## [4.4.0] — 2026-04-06 — Adversarial Audit + Regression Guard + P0 Security Fixes
+
+### New Features
+
+- **Regression Guard** (`engine/regression_guard.py`) — Anti-regression system:
+  - Golden snapshot: record outputs of 2 deterministic skills + 9 critical imports
+  - Smoke test: runs on every edit to `engine/*`, `skills/*`, `mcp_server/*`
+  - Regression check: compares fingerprints vs baseline, blocks on crash/status-change
+  - `neutron regress --snapshot` (establish baseline), `neutron regress --check` (run check)
+  - PreToolUse hook updated: backup → smoke test → regression check in 2 phases
+
+- **Context 30-Day Limit** (`skills/core/context/logic/__init__.py`) — `_estimate_context_size()` now limits scan to last 30 days only, preventing memory exhaustion on repos with years of daily logs
+
+- **Go Reviewer Package Filter** (`skills/core/go-reviewer/logic/__init__.py`) — Fixed `go vet ./...` hardcode; now builds package list from actual file paths
+
+- **Workflow Subprocess Crash Guard** (`skills/core/workflow/logic/__init__.py`) — Added `try/except FileNotFoundError` around pytest invocation
+
+### Bug Fixes
+
+- **CRITICAL: `rating.py` lost-update race** — `_load()` then `_save()` without lock. Concurrent `record_shipment()` calls from different processes could lose updates. Fixed: `_atomic_update()` wraps entire read-modify-write in a single filelock.
+
+- **CRITICAL: `dangerous-actions-blocker.sh` argument parsing broken** — `_shift "$#"; shift` compound command always emptied `$_cmd`, silently bypassing ALL protection for every Bash command. Fixed: proper manual argument parsing.
+
+- **CRITICAL: `auth.py` stale API key cache** — `resolve_neutron_root()` cached key→root mappings forever, so revoked keys remained active until server restart. Fixed: removed cache, re-validate against config every call.
+
+- **CRITICAL: `learned_skill_builder.py` broken generated code** — Literal `"{slug}"` string generated instead of variable `slug`. Fixed: proper variable interpolation.
+
+- **HIGH: `memory/logic` duplicate `_append_decisions`** — Second definition shadowed first, using `id: 0` for all synced decisions instead of unique IDs. Second definition removed.
+
+- **HIGH: `http_transport.py` CORS wildcard fallback** — If `config.get_server_config()` returned `{}`, CORS defaulted to `["*"]`. Fixed: explicit localhost-only fallback.
+
+- **HIGH: `auto_confirm.py` filelock deadlock** — `should_skip()` called `record_auto_action()` while still holding lock, which called `_log_auto_action()` trying to acquire same lock again. Fixed: separate nested function, release lock before calling `_log_auto_action()`.
+
+### Security Improvements
+
+- **`hooks/dangerous-actions-blocker.sh`** — Replaced broken negative lookahead grep with POSIX-compatible patterns; fixed `--force-with-lease` vs `--force` detection; fixed SSH unknown-host extraction
+- **`mcp_server/auth.py`** — Removed stale key cache (revocation now immediate); removed deprecated `set_neutron_root_for_key()`
+- **`mcp_server/http_transport.py`** — API key timing-safe comparison noted; CORS fallback hardened
+
+### Architecture
+
+- **Regression Guard preToolUse integration**: `hooks/pretool-backup.sh` now runs 2-phase protection (backup + smoke test) for `engine/*`, `skills/*`, `mcp_server/*` file writes
+- **Auto-confirm deadlock fix**: `_should_skip_impl()` isolates lock-protected read, releases before `_record_auto_action()`
+
+### Tests
+- **78/78 pass** ✅
+- **Regression guard: clean** ✅
+
+---
+
 ## [4.3.2] — 2026-04-01 — Garbage Collection + Session-Start Fix
 
 ### New Features

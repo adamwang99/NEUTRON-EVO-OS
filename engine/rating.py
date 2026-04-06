@@ -21,15 +21,16 @@ from datetime import datetime
 from typing import Optional
 
 from engine._atomic import atomic_write
+import os
 
-NEUTRON_ROOT = Path(__file__).parent.parent
+NEUTRON_ROOT = Path(os.environ.get("NEUTRON_ROOT", Path(__file__).parent.parent))
 MEMORY_DIR = NEUTRON_ROOT / "memory"
 RATINGS_FILE = MEMORY_DIR / "shipments.json"
 LOCK_FILE = MEMORY_DIR / "shipments.lock"
 
 
 def _load() -> dict:
-    """Load shipment data."""
+    """Load shipment data — called inside lock by _atomic_update only."""
     if RATINGS_FILE.exists():
         try:
             return json.loads(RATINGS_FILE.read_text())
@@ -38,11 +39,25 @@ def _load() -> dict:
     return {"shipments": [], "counter": 0}
 
 
-def _save(data: dict):
-    """Save shipment data atomically (filelock + fsync + rename)."""
-    MEMORY_DIR.mkdir(exist_ok=True)
+def _atomic_update(update_fn):
+    """
+    Thread/process-safe read-modify-write on shipments.json.
+    Holds lock for the entire operation — prevents lost updates.
+    """
     lock = filelock.FileLock(str(LOCK_FILE), timeout=10)
     with lock:
+        data = _load()
+        result = update_fn(data)
+        MEMORY_DIR.mkdir(exist_ok=True)
+        atomic_write(RATINGS_FILE, json.dumps(data, indent=2, ensure_ascii=False))
+        return result
+
+
+def _save(data: dict):
+    """Save shipment data atomically (filelock + fsync + rename)."""
+    lock = filelock.FileLock(str(LOCK_FILE), timeout=10)
+    with lock:
+        MEMORY_DIR.mkdir(exist_ok=True)
         atomic_write(RATINGS_FILE, json.dumps(data, indent=2, ensure_ascii=False))
 
 
@@ -73,35 +88,37 @@ def record_shipment(
 
     Returns: {status, shipment_id, summary}
     """
-    data = _load()
-    shipment_id = data["counter"] + 1
-    data["counter"] = shipment_id
+    captured = [0]  # list to capture shipment_id from inner closure
 
-    entry = {
-        "id": shipment_id,
-        "timestamp": datetime.now().isoformat(),
-        "project": project,
-        "complexity": complexity,
-        "steps_completed": steps_completed or [],
-        "time_to_ship_minutes": time_to_ship_minutes,
-        "outcome": outcome,
-        "discovery_path": discovery_path,
-        "spec_path": spec_path,
-    }
+    def _update(data: dict):
+        new_id = data["counter"] + 1
+        data["counter"] = new_id
+        captured[0] = new_id
+        entry = {
+            "id": new_id,
+            "timestamp": datetime.now().isoformat(),
+            "project": project,
+            "complexity": complexity,
+            "steps_completed": steps_completed or [],
+            "time_to_ship_minutes": time_to_ship_minutes,
+            "outcome": outcome,
+            "discovery_path": discovery_path,
+            "spec_path": spec_path,
+            "skills_used": steps_completed or [],
+        }
+        if rating is not None:
+            entry["rating"] = rating
+            entry["rating_notes"] = rating_notes
+            entry["rating_timestamp"] = datetime.now().isoformat()
+        data["shipments"].append(entry)
+        return entry
 
-    if rating is not None:
-        entry["rating"] = rating
-        entry["rating_notes"] = rating_notes
-        entry["rating_timestamp"] = datetime.now().isoformat()
-
-    data["shipments"].append(entry)
-    _save(data)
-
+    entry = _atomic_update(_update)
     return {
         "status": "recorded",
-        "shipment_id": shipment_id,
+        "shipment_id": captured[0],
         "entry": entry,
-        "summary": _summarize_data(data),
+        "summary": _summarize_data(_load()),
     }
 
 
@@ -114,16 +131,23 @@ def add_rating(shipment_id: int, rating: int, notes: str = "") -> dict:
     if not (1 <= rating <= 5):
         return {"status": "error", "message": "Rating must be 1-5"}
 
-    data = _load()
-    for s in data["shipments"]:
-        if s["id"] == shipment_id:
-            s["rating"] = rating
-            s["rating_notes"] = notes
-            s["rating_timestamp"] = datetime.now().isoformat()
-            _save(data)
-            return {"status": "updated", "shipment": s, "summary": _summarize_data(data)}
+    def _update(data: dict):
+        for s in data["shipments"]:
+            if s["id"] == shipment_id:
+                s["rating"] = rating
+                s["rating_notes"] = notes
+                s["rating_timestamp"] = datetime.now().isoformat()
+                return s
+        return None
 
-    return {"status": "error", "message": f"Shipment {shipment_id} not found"}
+    updated = _atomic_update(_update)
+    if updated is None:
+        return {"status": "error", "message": f"Shipment {shipment_id} not found"}
+    return {
+        "status": "updated",
+        "shipment": updated,
+        "summary": _summarize_data(_load()),
+    }
 
 
 def get_shipment(shipment_id: int) -> Optional[dict]:
@@ -176,3 +200,36 @@ def _summarize_data(data: dict) -> dict:
 def summarize() -> dict:
     """Return full summary for UI or reporting."""
     return _summarize_data(_load())
+
+
+def get_average_rating() -> float | None:
+    """
+    Return the rolling average user rating across all rated shipments.
+    Returns None if no rated shipments exist.
+    """
+    data = _load()
+    rated = [s["rating"] for s in data.get("shipments", []) if "rating" in s]
+    if not rated:
+        return None
+    return round(sum(rated) / len(rated), 2)
+
+
+def get_rating_for_skill(skill_name: str) -> dict:
+    """
+    Get aggregate rating stats for shipments involving a specific skill.
+    skill_name is matched in steps_completed.
+    """
+    data = _load()
+    skill_shipments = [
+        s for s in data.get("shipments", [])
+        if skill_name in s.get("skills_used", s.get("steps_completed", []))
+    ]
+    rated = [s["rating"] for s in skill_shipments if "rating" in s]
+    if not rated:
+        return {"count": len(skill_shipments), "rated": 0, "average_rating": None}
+    return {
+        "count": len(skill_shipments),
+        "rated": len(rated),
+        "average_rating": round(sum(rated) / len(rated), 2),
+        "ratings": rated,
+    }

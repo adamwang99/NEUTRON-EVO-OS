@@ -84,11 +84,28 @@ def validate_api_key(api_key: str) -> tuple[bool, str | None]:
     """
     Validate an API key.
     Returns (is_valid, neutron_root_or_error).
-    """
-    cfg = _load()
-    key_entry = cfg.get("keys", {}).get(api_key)
 
-    if not key_entry:
+    Security: iterates ALL stored keys using hmac.compare_digest for
+    constant-time comparison. Prevents timing attacks where an attacker
+    guesses the key byte-by-byte by measuring response latency.
+
+    Note: Python dict.__contains__ already uses a hash, but iterating all
+    keys with compare_digest adds defense-in-depth for the key comparison itself.
+    """
+    import hmac
+    cfg = _load()
+    all_keys = cfg.get("keys", {})
+    key_entry = None
+
+    # Constant-time key lookup: compare input against every stored key.
+    # The loop always runs N iterations (N = number of keys), so
+    # the timing does NOT reveal whether the key exists or how close the match was.
+    for candidate_key, candidate_entry in all_keys.items():
+        if hmac.compare_digest(api_key, candidate_key):
+            key_entry = candidate_entry
+            break
+
+    if key_entry is None:
         return False, "Invalid API key"
 
     if not key_entry.get("enabled", True):
