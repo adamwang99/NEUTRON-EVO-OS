@@ -17,6 +17,8 @@ from __future__ import annotations
 import os
 import re
 import json
+import filelock
+import tempfile
 from pathlib import Path
 from datetime import datetime
 
@@ -28,6 +30,7 @@ _NEUTRON_ROOT = Path(os.environ.get(
 MEMORY_DIR = _NEUTRON_ROOT / "memory"
 DISCOVERIES_DIR = MEMORY_DIR / "discoveries"
 _SESSION_FILE = MEMORY_DIR / ".discovery_session.json"
+_SESSION_LOCK = _SESSION_FILE.with_suffix(".lock")
 
 
 # ─── Structured interview questions ────────────────────────────────────────────
@@ -244,7 +247,7 @@ def _build_questions_text(questions: list, answers: dict) -> str:
 
 
 def _save_session(slug: str, prompt: str, analysis: dict, answers: dict) -> Path:
-    """Save interview session to disk for resumability."""
+    """Save interview session to disk for resumability. Thread-safe via filelock."""
     DISCOVERIES_DIR.mkdir(exist_ok=True)
     today = datetime.now().strftime("%Y-%m-%d")
     session_dir = DISCOVERIES_DIR / today / slug
@@ -259,7 +262,24 @@ def _save_session(slug: str, prompt: str, analysis: dict, answers: dict) -> Path
         "status": "in_progress" if answers.get("_questions_remaining") else "complete",
     }
     path = session_dir / "session.json"
-    path.write_text(json.dumps(session, indent=2, ensure_ascii=False))
+    # Use per-session lock to allow concurrent sessions for different tasks
+    _session_lock = filelock.FileLock(str(path.with_suffix(".lock")), timeout=10)
+    with _session_lock:
+        fd = tempfile.NamedTemporaryFile(
+            mode="w", dir=session_dir, delete=False, encoding="utf-8"
+        )
+        try:
+            fd.write(json.dumps(session, indent=2, ensure_ascii=False))
+            fd.flush()
+            os.fsync(fd.fileno())
+            fd.close()
+            os.replace(fd.name, str(path))
+        except Exception:
+            try:
+                os.unlink(fd.name)
+            except Exception:
+                pass
+            raise
     return session_dir
 
 

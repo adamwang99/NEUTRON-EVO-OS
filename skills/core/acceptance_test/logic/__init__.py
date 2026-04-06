@@ -17,6 +17,8 @@ from __future__ import annotations
 import os
 import re
 import subprocess
+import filelock
+import tempfile
 from pathlib import Path
 from datetime import datetime
 
@@ -27,6 +29,7 @@ _NEUTRON_ROOT = Path(os.environ.get(
 ))
 MEMORY_DIR = _NEUTRON_ROOT / "memory"
 STATUS_FILE = MEMORY_DIR / ".acceptance_status.json"
+_STATUS_LOCK = STATUS_FILE.with_suffix(".lock")
 
 
 def run_acceptance_test(task: str, context: dict = None) -> dict:
@@ -128,8 +131,26 @@ def _load_status() -> dict:
 
 
 def _save_status(status: dict):
-    """Save acceptance status."""
-    STATUS_FILE.write_text(__import__("json").dumps(status, indent=2))
+    """Save acceptance status — thread-safe with filelock + atomic write."""
+    lock = filelock.FileLock(str(_STATUS_LOCK), timeout=10)
+    with lock:
+        import json as _json
+        MEMORY_DIR.mkdir(exist_ok=True)
+        fd = tempfile.NamedTemporaryFile(
+            mode="w", dir=MEMORY_DIR, delete=False, encoding="utf-8"
+        )
+        try:
+            fd.write(_json.dumps(status, indent=2))
+            fd.flush()
+            os.fsync(fd.fileno())
+            fd.close()
+            os.replace(fd.name, str(STATUS_FILE))
+        except Exception:
+            try:
+                os.unlink(fd.name)
+            except Exception:
+                pass
+            raise
 
 
 def _generate_test_script(spec: dict) -> dict:

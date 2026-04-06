@@ -14,6 +14,8 @@ from __future__ import annotations
 import json
 import os
 import re
+import filelock
+import tempfile
 from pathlib import Path
 from datetime import datetime
 from typing import Optional
@@ -25,6 +27,7 @@ _NEUTRON_ROOT = Path(os.environ.get(
 ))
 MEMORY_DIR = _NEUTRON_ROOT / "memory"
 _STATE_FILE = MEMORY_DIR / ".orchestration_state.json"
+_STATE_LOCK = _STATE_FILE.with_suffix(".lock")
 
 
 # ─── State Management ──────────────────────────────────────────────────────────
@@ -39,8 +42,25 @@ def _load_state() -> dict:
 
 
 def _save_state(state: dict) -> None:
+    """Save orchestration state — thread-safe with filelock + atomic write."""
     MEMORY_DIR.mkdir(exist_ok=True)
-    _STATE_FILE.write_text(json.dumps(state, indent=2))
+    lock = filelock.FileLock(str(_STATE_LOCK), timeout=10)
+    with lock:
+        fd = tempfile.NamedTemporaryFile(
+            mode="w", dir=MEMORY_DIR, delete=False, encoding="utf-8"
+        )
+        try:
+            fd.write(json.dumps(state, indent=2))
+            fd.flush()
+            os.fsync(fd.fileno())
+            fd.close()
+            os.replace(fd.name, str(_STATE_FILE))
+        except Exception:
+            try:
+                os.unlink(fd.name)
+            except Exception:
+                pass
+            raise
 
 
 def _clear_state() -> None:

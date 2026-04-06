@@ -20,12 +20,14 @@ from __future__ import annotations
 
 import filelock
 import os
+import re
 import shutil
 import subprocess
 from pathlib import Path
 from datetime import datetime
 
 from engine._atomic import atomic_write
+from skills.core.discovery.logic import _slugify
 
 
 def _auto_confirm_check(step: str) -> bool:
@@ -239,19 +241,39 @@ def _step_spec(task: str, context: dict) -> dict:
     """
     gate = _load_gate()
 
-    # Check discovery was completed
-    if not gate.get("discovery_complete"):
-        discovery_files = (
-            list(_NEUTRON_ROOT.glob("DISCOVERY.md"))
-            + list(MEMORY_DIR.rglob("DISCOVERY.md"))
-        )
-        if not discovery_files:
+    # Discovery gate: only required if user has NOT explicitly approved.
+    # Explicit approval (approved=True) = user assumes responsibility, skip discovery.
+    _explicit_approval = context.get("approved") is True
+    if not gate.get("discovery_complete") and not _explicit_approval:
+        # Only auto-complete if a matching session.json for THIS TASK exists on disk.
+        # Prevents bypassing discovery with leftover files from previous projects.
+        discovery_files = list(MEMORY_DIR.glob("discoveries/*/session.json"))
+        matched_slug = None
+        task_slug = _slugify(task)
+        for sess in discovery_files:
+            try:
+                import json as _json
+                sess_data = _json.loads(sess.read_text())
+                sess_slug = sess_data.get("slug", "")
+                if sess_slug and task_slug.startswith(sess_slug):
+                    matched_slug = sess_slug
+                    break
+            except Exception:
+                continue
+
+        if matched_slug is None:
             return {
                 "status": "blocked",
                 "output": "Discovery interview not completed. Run /discovery first.",
                 "ci_delta": 0,
             }
         gate["discovery_complete"] = True
+        gate["discovery_slug"] = matched_slug
+        _save_gate(gate)
+    elif not gate.get("discovery_complete") and _explicit_approval:
+        # User explicitly approved — mark discovery complete (they take responsibility)
+        gate["discovery_complete"] = True
+        gate["discovery_slug"] = None
         _save_gate(gate)
 
     gate["current_step"] = "spec"

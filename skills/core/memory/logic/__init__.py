@@ -721,72 +721,90 @@ def _approve_pending(context: dict) -> dict:
     if not pending_path.exists():
         return {"status": "error", "output": "No pending entries found.", "ci_delta": -3}
 
-    # Acquire BOTH locks in consistent order (pending < learned) to avoid deadlock
+    # Acquire BOTH locks in consistent order (pending < learned) to avoid deadlock.
+    # Acquire BEFORE try so we control when to release (no implicit from 'with').
     pending_lock_path = str(pending_path.with_suffix(".lock"))
     learned_lock_path = str(learned_path.with_suffix(".lock"))
     pending_lock = filelock.FileLock(pending_lock_path, timeout=10)
     learned_lock = filelock.FileLock(learned_lock_path, timeout=10)
 
+    _pending_acquired = False
+    _learned_acquired = False
+
     try:
         # Always acquire in path-order: pending first, then learned
         pending_lock.acquire(timeout=10)
-        try:
-            with learned_lock:
-                content = pending_path.read_text()
-                lines = content.splitlines()
+        _pending_acquired = True
+        learned_lock.acquire(timeout=10)
+        _learned_acquired = True
 
-                # Parse into entry blocks (each block = list of lines)
-                blocks: list[list[str]] = []
-                current: list[str] = []
-                for line in lines:
-                    if line.startswith("## [") and "[PENDING]" in line:
-                        if current:
-                            blocks.append(current)
-                        current = [line]
-                    elif current:
-                        current.append(line)
+        content = pending_path.read_text()
+        lines = content.splitlines()
+
+        # Parse into entry blocks (each block = list of lines)
+        blocks: list[list[str]] = []
+        current: list[str] = []
+        for line in lines:
+            if line.startswith("## [") and "[PENDING]" in line:
                 if current:
                     blocks.append(current)
+                current = [line]
+            elif current:
+                current.append(line)
+        if current:
+            blocks.append(current)
 
-                # Find target block by exact Draft ID
-                target_block: list[str] | None = None
-                remaining_blocks: list[list[str]] = []
-                for block in blocks:
-                    block_text = "\n".join(block)
-                    if f"Draft ID: {draft_id}" in block_text:
-                        target_block = block
-                    else:
-                        remaining_blocks.append(block)
+        # Find target block by exact Draft ID
+        target_block: list[str] | None = None
+        remaining_blocks: list[list[str]] = []
+        for block in blocks:
+            block_text = "\n".join(block)
+            if f"Draft ID: {draft_id}" in block_text:
+                target_block = block
+            else:
+                remaining_blocks.append(block)
 
-                if target_block is None:
-                    return {
-                        "status": "error",
-                        "output": f"Draft '{draft_id}' not found in pending entries.",
-                        "ci_delta": -3,
-                    }
+        if target_block is None:
+            return {
+                "status": "error",
+                "output": f"Draft '{draft_id}' not found in pending entries.",
+                "ci_delta": -3,
+            }
 
-                # Strip [PENDING] from header, keep rest of block intact
-                approved_lines = []
-                for line in target_block:
-                    if "[PENDING]" in line:
-                        approved_lines.append(line.replace("[PENDING]", "").replace("  ", " ").strip())
-                    else:
-                        approved_lines.append(line)
-                approved_text = "\n".join(approved_lines)
+        # Strip [PENDING] from header, keep rest of block intact
+        approved_lines = []
+        for line in target_block:
+            if "[PENDING]" in line:
+                approved_lines.append(line.replace("[PENDING]", "").replace("  ", " ").strip())
+            else:
+                approved_lines.append(line)
+        approved_text = "\n".join(approved_lines)
 
-                # Write approved entry to LEARNED.md (atomic — inside learned_lock held)
-                existing_learned = learned_path.read_text() if learned_path.exists() else ""
-                _atomic_write_md(learned_path, existing_learned + "\n" + approved_text + "\n")
+        # Write approved entry to LEARNED.md (both locks held — atomic)
+        existing_learned = learned_path.read_text() if learned_path.exists() else ""
+        _atomic_write_md(learned_path, existing_learned + "\n" + approved_text + "\n")
 
-                # Write remaining pending back (atomic — inside pending_lock held)
-                remaining_text = "\n".join(
-                    line for block in remaining_blocks for line in block
-                )
-                _atomic_write_md(pending_path, remaining_text)
-        finally:
-            pending_lock.release()
+        # Write remaining pending back (both locks held — atomic)
+        remaining_text = "\n".join(
+            line for block in remaining_blocks for line in block
+        )
+        _atomic_write_md(pending_path, remaining_text)
+
     except filelock.Timeout:
         return {"status": "error", "output": "Lock timeout — try again", "ci_delta": -1}
+    finally:
+        # ALWAYS release both locks, even on early-return inside try.
+        # Check _learned_acquired to avoid double-release (RuntimeError if not held).
+        if _learned_acquired:
+            try:
+                learned_lock.release()
+            except RuntimeError:
+                pass
+        if _pending_acquired:
+            try:
+                pending_lock.release()
+            except RuntimeError:
+                pass
 
     return {
         "status": "approved",

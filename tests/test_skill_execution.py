@@ -50,17 +50,18 @@ class TestSkillExecutionRun:
 
     def test_workflow_spec_returns_proper_status(self):
         # SPEC step returns one of:
-        # - spec_written      : SPEC.md written, USER REVIEW gate required
-        # - awaiting_discovery: no discovery yet, blocked
+        # - blocked            : no discovery session for this task (hard gate)
+        # - spec_written       : SPEC.md written, USER REVIEW gate required
         # - spec_approved     : auto-confirm is on, auto-approved immediately
-        # All three are valid — the test only checks ci_delta consistency.
+        # Note: "awaiting_discovery" was removed — discovery gate now strictly
+        # requires a matching session.json for the current task (no silent bypass).
         from pathlib import Path
         _base = Path(__file__).parent.parent
         (_base / "SPEC.md").unlink(missing_ok=True)
         (_base / "memory" / ".workflow_gate.json").unlink(missing_ok=True)
         result = skill_execution.run("workflow", "test", {"step": "spec"})
-        assert result["status"] in ("spec_written", "awaiting_discovery", "spec_approved")
-        # ci_delta: 0 if awaiting/written; 5 if auto-approved
+        assert result["status"] in ("blocked", "spec_written", "spec_approved")
+        # ci_delta: 0 if blocked/written; 5 if auto-approved
         assert result["ci_delta"] in (0, 5)
 
     def test_workflow_spec_with_approval(self):
