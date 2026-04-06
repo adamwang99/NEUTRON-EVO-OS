@@ -41,8 +41,9 @@ if [ -z "$FILEPATH" ]; then
     exit 0
 fi
 
-# Resolve absolute path
-FILEPATH="$(realpath "$FILEPATH" 2>/dev/null || echo "$FILEPATH")"
+# Resolve absolute path safely — use -- to stop option parsing.
+# This prevents FILEPATH="--relative-to=/etc /etc/passwd" from injecting options.
+FILEPATH="$(realpath -- "$FILEPATH" 2>/dev/null || echo "$FILEPATH")"
 
 # ── Phase 1: Backup before write ───────────────────────────────────────────────
 mkdir -p "$BACKUP_DIR"

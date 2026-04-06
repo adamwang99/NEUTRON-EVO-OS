@@ -76,13 +76,8 @@ def create_app() -> FastAPI:
     # ── Ready check ───────────────────────────────────────────────────────────
     @app.get("/ready")
     async def ready():
-        """Readiness probe — checks NEUTRON_ROOT is valid. No internal paths leaked."""
-        root = os.environ.get("NEUTRON_ROOT", "")
-        engine_exists = Path(root, "engine").exists()
-        return {
-            "status": "ok" if engine_exists else "degraded",
-            "engine_found": engine_exists,
-        }
+        """Readiness probe — returns status only, no internal paths revealed."""
+        return {"status": "ok"}
 
     # ── API key validation ────────────────────────────────────────────────────
     @app.get("/keys")

@@ -166,3 +166,43 @@ if [ -n "$COOKBOOK" ] && [ -f "$COOKBOOK" ]; then
     echo "📖 Recent cookbook: $(basename "$COOKBOOK")"
     head -15 "$COOKBOOK" 2>/dev/null | sed 's/^/   /'
 fi
+
+# ── Context Snapshot (recovery after /compact) ─────────────────────────────
+# After context compaction, the next session sees what was in progress.
+# neutron snapshot saves state on every skill execution automatically.
+# Uses a temp Python script to safely parse JSON without shell injection risk.
+SNAPSHOT="$MEMORY_DIR/.context_snapshot.json"
+if [ -f "$SNAPSHOT" ]; then
+    # Write Python script to temp file (single-quoted heredoc = no variable expansion)
+    # This avoids embedding $SNAPSHOT in a -c string which could allow code injection.
+    SNAP_TMP=$(mktemp)
+    cat > "$SNAP_TMP" <<'PYEOF'
+import json, sys, os
+from datetime import datetime
+try:
+    with open(sys.argv[1]) as f:
+        data = json.load(f)
+    ts = data.get("snapshot_at", "")
+    if ts:
+        age = (datetime.now() - datetime.fromisoformat(ts)).total_seconds() / 3600
+        if age < 4:
+            print("TASK=" + data.get("task", ""))
+            print("STEP=" + data.get("current_step", ""))
+            print("STATUS=" + data.get("test_status", ""))
+            files = ", ".join(data.get("modified_files", [])[:5])
+            print("MODIFIED=" + files)
+except Exception:
+    pass
+PYEOF
+    # shellcheck source=SC2090
+    eval "$(python3 "$SNAP_TMP" "$SNAPSHOT" 2>/dev/null)"
+    rm -f "$SNAP_TMP"
+    if [ -n "$TASK" ]; then
+        echo ""
+        echo "🔄 Context recovered from previous session:"
+        echo "   📋 Task: $TASK"
+        [ -n "$STEP" ] && echo "   📍 Step: $STEP"
+        [ -n "$MODIFIED" ] && echo "   📁 Modified: $MODIFIED"
+        echo "   ⚡ To clear:  neutron snapshot clear"
+    fi
+fi

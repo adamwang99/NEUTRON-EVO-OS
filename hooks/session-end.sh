@@ -17,12 +17,11 @@ fi
 export NEUTRON_ROOT
 
 # ── Memory sync to hub ─────────────────────────────────────────────────────
-# Run only if NEUTRON_HUB is set and different from NEUTRON_ROOT
+# Run only if NEUTRON_HUB is set and different from NEUTRON_ROOT.
+# nohup + disown: survives parent exit (atexit), continues in background.
 if [ -n "$NEUTRON_HUB" ] && [ "$NEUTRON_HUB" != "$NEUTRON_ROOT" ]; then
-    (
-        python3 -m neutron memory sync --hub "$NEUTRON_HUB" 2>/dev/null
-    ) &
-    # Don't block session exit — run async
+    nohup bash -c "python3 -m neutron memory sync --hub '$NEUTRON_HUB'" 2>/dev/null &
+    disown
 fi
 
 # ── Dream Cycle trigger (if silent for >30min, per last activity) ───────────
@@ -36,10 +35,9 @@ if [ -f "$LAST_ACTIVITY_FILE" ]; then
         NOW_EPOCH=$(date +%s)
         MINUTES_SINCE=$(( (NOW_EPOCH - LAST_EPOCH) / 60 ))
         if [ "$MINUTES_SINCE" -ge 30 ]; then
-            (
-                # Silent Dream Cycle — don't block exit
-                python3 -m neutron dream 2>/dev/null
-            ) &
+            # nohup + disown: survive parent exit (atexit)
+            nohup bash -c "python3 -m neutron dream" 2>/dev/null &
+            disown
         fi
     fi
 fi

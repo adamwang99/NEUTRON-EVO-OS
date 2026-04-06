@@ -29,10 +29,27 @@ class _RateBucket:
     rate: int  # tokens per minute
 
 
-# In-memory rate limiter: key → _RateBucket
-_rate_buckets: dict[str, _RateBucket] = defaultdict(lambda: _RateBucket(
-    tokens=60, last_refill=time.time(), rate=60
-))
+# Module-level eviction counter — reset after every _EVICTION_THRESHOLD calls
+_eviction_counter = 0
+_MAX_BUCKETS = 10_000   # hard cap — prevents unbounded memory growth
+_EVICTION_THRESHOLD = 1000  # trigger eviction every N calls
+
+
+def _cleanup_expired_buckets(caller_tokens: float) -> None:
+    """
+    Remove rate-limit buckets that are empty and have been idle for >60 seconds.
+    Called lazily on every _EVICTION_THRESHOLD-th request to prevent O(n) scan
+    on every call while still keeping memory bounded.
+    """
+    now = time.time()
+    cutoff = 60.0  # inactive = no tokens and idle > 60s
+    expired = [
+        k for k, b in _rate_buckets.items()
+        if b.tokens <= 0 and (now - b.last_refill) > cutoff
+    ]
+    # Remove at most _MAX_BUCKETS // 2 expired entries per cleanup
+    for k in expired[: _MAX_BUCKETS // 2]:
+        _rate_buckets.pop(k, None)
 
 
 def reset_rate_limit(key: str):
@@ -47,6 +64,19 @@ def check_rate_limit(api_key: str) -> tuple[bool, str]:
     """
     cfg = _get_config()
     rate = cfg.get_rate_limit(api_key)
+
+    # Lazy eviction: clean up expired buckets every N calls to prevent unbounded growth
+    nonlocal _eviction_counter
+    _eviction_counter += 1
+    if _eviction_counter >= _EVICTION_THRESHOLD:
+        _eviction_counter = 0
+        _cleanup_expired_buckets(0)
+
+    # Get or create bucket
+    if api_key not in _rate_buckets:
+        if len(_rate_buckets) >= _MAX_BUCKETS:
+            return False, "Rate limit table full — too many distinct keys"
+        _rate_buckets[api_key] = _RateBucket(tokens=rate, last_refill=time.time(), rate=rate)
 
     bucket = _rate_buckets[api_key]
     now = time.time()

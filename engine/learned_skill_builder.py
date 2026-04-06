@@ -32,6 +32,7 @@ INVOCATION_LOCK = MEMORY_DIR / ".learned_invocations.lock"
 # ─── Invocation tracking ─────────────────────────────────────────────────────────
 
 def _load_invocations() -> dict:
+    """Load invocation log. Caller must hold the lock — no internal locking here."""
     if INVOCATION_LOG.exists():
         try:
             return json.loads(INVOCATION_LOG.read_text())
@@ -49,14 +50,17 @@ def _save_invocations(data: dict):
 
 
 def _record_invocation(skill_name: str):
-    """Record that a learned skill was invoked."""
-    inv = _load_invocations()
-    now = datetime.now().isoformat()
-    inv[skill_name] = {
-        "last_invoked": now,
-        "count": inv.get(skill_name, {}).get("count", 0) + 1,
-    }
-    _save_invocations(inv)
+    """Record that a learned skill was invoked. Thread/process-safe with filelock."""
+    lock = filelock.FileLock(str(INVOCATION_LOCK), timeout=10)
+    with lock:
+        inv = _load_invocations()  # safe: lock is held
+        now = datetime.now().isoformat()
+        inv[skill_name] = {
+            "last_invoked": now,
+            "count": inv.get(skill_name, {}).get("count", 0) + 1,
+        }
+        # _save_invocations also uses filelock — re-acquires same lock (safe, no deadlock)
+        _save_invocations(inv)
 
 
 # ─── Pattern distillation ────────────────────────────────────────────────────────
