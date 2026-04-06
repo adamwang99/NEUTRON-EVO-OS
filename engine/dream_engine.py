@@ -199,12 +199,13 @@ def _call_claude_analysis(filtered_log: str, learned_content: str = "") -> dict:
         }
 
     model = os.environ.get("ANTHROPIC_MODEL", "claude-opus-4-20250514")
-    api_key = os.environ.get("ANTHROPIC_AUTH_TOKEN", "")
+    # Support both ANTHROPIC_API_KEY (standard) and ANTHROPIC_AUTH_TOKEN (legacy)
+    api_key = os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_AUTH_TOKEN", "")
 
     if not api_key:
         return {
             "status": "error",
-            "message": "ANTHROPIC_AUTH_TOKEN not set — cannot run AI analysis",
+            "message": "ANTHROPIC_API_KEY (or ANTHROPIC_AUTH_TOKEN) not set — cannot run AI analysis",
             "significant_events": [],
             "cookbook_sections": [],
             "learned_drafts": [],

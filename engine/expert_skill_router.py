@@ -146,34 +146,87 @@ def route_task(task: str, context: dict = None) -> dict:
     context = context or {}
 
     # --- Skill mapping ---
+    # Note: short keywords like "log" use word-boundary matching to avoid
+    # false positives (e.g. "log" shouldn't match "login").
+    # Format: (keyword, word_boundary: bool)
     skill_map = {
-        "context":   ["context", "load", "inject", "priority", "claude.md", "ide window",
-                      "compact", "compression", "survive"],
-        "memory":    ["memory", "log", "archive", "daily", "remember", "recall",
-                      "search", "prune", "distill", "cookbook", "cookbooks", "decisions"],
-        "workflow":  ["workflow", "/explore", "/spec", "/build", "/verify", "/ship",
-                      "/acceptance", "/auto", "step", "specification", "5-step", "pipeline",
-                      "user review", "approve spec", "auto-confirm", "auto confirm",
-                      "skip review", "automatic approval"],
-        "engine":    ["engine", "router", "route", "ci", "audit", "observer", "dream",
-                      "status", "health", "stats", "performance ledger"],
-        "checkpoint":["checkpoint", "checkpointing", "handoff", "resume", "state save"],
-        "discovery": ["discovery", "interview", "clarify", "questions", "understand",
-                      "what i need", "what do you want", "requirements", "user story",
-                      "clarifying", "ask questions", "/discovery"],
-        "acceptance_test": ["acceptance", "test", "verify", "user test", "acceptance test",
-                           "/acceptance", "run it", "does it work", "user verification"],
+        "context":   [("context", False), ("load", False), ("inject", False),
+                      ("priority", False), ("claude.md", False), ("compact", False),
+                      ("compression", False), ("survive", False),
+                      ("ide window", False), ("context window", False), ("token overhead", False)],
+        "memory":    [("memory", False), ("archive", False), ("daily", False),
+                      ("remember", False), ("recall", False), ("search", False),
+                      ("prune", False), ("distill", False), ("cookbook", False), ("cookbooks", False),
+                      ("decisions", False), ("learned", False), ("shipment", False),
+                      ("shipments", False),
+                      # word-boundary only for short ambiguous words
+                      (" log ", True), (" log.", True), (" log,", True)],
+        "workflow":  [("workflow", False), ("/explore", False), ("/spec", False),
+                      ("/build", False), ("/verify", False), ("/ship", False),
+                      ("/acceptance", False), ("/auto", False), ("step", False),
+                      ("specification", False), ("5-step", False), ("pipeline", False),
+                      ("user review", False), ("approve spec", False),
+                      ("auto-confirm", False), ("auto confirm", False),
+                      ("skip review", False), ("automatic approval", False),
+                      ("implement", False), ("user story", False),
+                      ("acceptance criteria", False), ("story point", False),
+                      ("feature", False), ("new", False)],
+        "orchestration": [("orchestrat", False), ("parallel", False), ("multi-agent", False),
+                          ("agent team", False), ("swarm", False), ("concurrent", False),
+                          ("batch", False), ("coordinate agents", False),
+                          ("worktree", False), ("git worktree", False), ("divide work", False)],
+        "engine":    [("engine", False), ("router", False), ("route", False),
+                      ("ci", False), ("audit", False), ("observer", False),
+                      ("dream", False), ("status", False), ("health", False),
+                      ("stats", False), ("performance ledger", False), ("self-evolv", False)],
+        "checkpoint":[("checkpoint", False), ("checkpointing", False), ("handoff", False),
+                      ("resume", False), ("state save", False),
+                      ("save progress", False), ("interrupt", False), ("session persist", False)],
+        "discovery": [("discovery", False), ("interview", False), ("clarify", False),
+                     ("questions", False), ("understand", False),
+                     ("what i need", False), ("what do you want", False),
+                     ("requirements", False), ("user story", False),
+                     ("clarifying", False), ("ask questions", False),
+                     ("/discovery", False), ("gather requirements", False)],
+        "acceptance_test": [("acceptance", False), ("user test", False),
+                           ("acceptance test", False), ("/acceptance", False),
+                           ("run it", False), ("does it work", False),
+                           ("user verification", False), ("pytest", False),
+                           ("coverage", False), ("unit test", False),
+                           ("integration test", False)],
+        # Catch-all for coding tasks that don't match specific skills
+        "wildcard":  [("bug", False), ("fix", False), ("crash", False),
+                       ("error", False), ("debug", False), ("patch", False),
+                       ("refactor", False), ("security", False), ("performance", False),
+                       ("optimize", False), ("leak", False), ("race condition", False),
+                       ("timeout", False), ("flake", False), ("lint", False),
+                       ("type error", False), ("import error", False)],
     }
 
     candidates = []
     for skill, keywords in skill_map.items():
         score = 0
-        for kw in keywords:
-            if kw in task_lower:
-                score += 1
+        for kw, wb in keywords:
+            if wb:
+                # Word boundary: kw padded with spaces to avoid substring false positives
+                if f" {kw} " in f" {task_lower} " or task_lower.startswith(f"{kw} ") or task_lower.endswith(f" {kw}"):
+                    score += 1
+            else:
+                if kw in task_lower:
+                    score += 1
         if score > 0:
             entry = get_ledger_entry(skill)
             candidates.append((skill, score, entry["CI"]))
+
+    # Wildcard: if task has bug/fix/error keywords but no specific skill matched,
+    # treat it as a workflow task (fix a bug → build → verify → ship)
+    if not candidates:
+        wildcard_kws = skill_map["wildcard"]
+        wc_score = sum(1 for kw, wb in wildcard_kws if kw in task_lower)
+        if wc_score > 0:
+            entry = get_ledger_entry("workflow")
+            candidates.append(("workflow", wc_score, entry["CI"]))
+
 
     if not candidates:
         # Default to workflow for unknown tasks
