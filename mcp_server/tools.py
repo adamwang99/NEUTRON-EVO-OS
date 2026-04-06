@@ -424,14 +424,21 @@ def _spawn_agent(args: dict) -> dict:
 
     def _collect():
         try:
-            for msg in query(prompt, opts):
-                msg_type = type(msg).__name__
-                if hasattr(msg, "result") and msg.result:
-                    result_parts.append(str(msg.result)[:500])
-                elif hasattr(msg, "content") and msg.content:
-                    result_parts.append(str(msg.content)[:500])
-                elif msg_type == "ResultMessage":
-                    result_parts.append(str(getattr(msg, "result", ""))[:500])
+            # query() is an async generator — must use asyncio.run() to iterate
+            # in a sync thread. asyncio.run() creates/destroys its own event loop,
+            # safe to call inside ThreadPoolExecutor.
+            async def _run():
+                collected = []
+                async for msg in query(prompt, opts):
+                    if hasattr(msg, "result") and msg.result:
+                        collected.append(str(msg.result)[:500])
+                    elif hasattr(msg, "content") and msg.content:
+                        collected.append(str(msg.content)[:500])
+                    elif type(msg).__name__ == "ResultMessage":
+                        collected.append(str(getattr(msg, "result", "") or "")[:500])
+                return collected
+
+            result_parts.extend(asyncio.run(_run()))
         except Exception as e:
             errors.append(str(e)[:200])
 
@@ -462,3 +469,56 @@ def _spawn_agent(args: dict) -> dict:
             ),
         }],
     }
+
+
+def spawn_parallel(unit_configs: list[dict]) -> list[dict]:
+    """
+    Spawn N agents in true parallel — all at once, not sequential.
+
+    Call this from orchestration execute phase instead of returning text configs.
+    Each unit config should have: agent_id, prompt, tools, cwd, timeout_seconds.
+
+    Returns: list of result dicts (one per unit), in the same order as inputs.
+    Any agent that fails or times out returns an error dict (doesn't crash others).
+
+    Usage:
+        results = spawn_parallel([
+            {"agent_id": "unit-1", "prompt": "do X", ...},
+            {"agent_id": "unit-2", "prompt": "do Y", ...},
+        ])
+    """
+    if not unit_configs:
+        return []
+    if len(unit_configs) == 1:
+        return [_spawn_agent(unit_configs[0])]
+
+    n = len(unit_configs)
+    # Per-agent timeout: overall budget divided by N, min 60s each
+    per_unit_timeout = max(60, 600 // n)
+
+    def _run_one(cfg: dict) -> dict:
+        cfg = dict(cfg)  # don't mutate caller's dict
+        cfg.setdefault("timeout_seconds", per_unit_timeout)
+        return _spawn_agent(cfg)
+
+    results: list[dict] = [None] * n
+    errors: list[str] = []
+
+    try:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=n) as pool:
+            futures = [pool.submit(_run_one, cfg) for cfg in unit_configs]
+            for i, fut in enumerate(futures):
+                try:
+                    results[i] = fut.result(timeout=per_unit_timeout + 30)
+                except concurrent.futures.TimeoutError:
+                    results[i] = {
+                        "content": [{"type": "text", "text": f"[agent:{unit_configs[i].get('agent_id','?')} timeout after {per_unit_timeout}s]"}],
+                    }
+                except Exception as e:
+                    results[i] = {
+                        "content": [{"type": "text", "text": f"[agent:{unit_configs[i].get('agent_id','?')} error: {e}]"}],
+                    }
+    except Exception as e:
+        errors.append(f"pool error: {e}")
+
+    return results

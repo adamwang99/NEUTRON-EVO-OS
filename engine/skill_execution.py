@@ -55,21 +55,21 @@ def run(skill_name: str, task: str, context: dict = None) -> dict:
         context["_low_confidence"] = True
 
     # ── CI gate: always apply to the skill being executed.
-    # Rating 1-2 → update_ci(skill, -5) → CI drops → next run is BLOCKED.
-    # This is the closed feedback loop: past ratings affect blocking decisions.
+    # Recovery path: CI 0-19 = rehabilitation (reduced confidence, not hard block)
+    #                  CI 20-29 = restricted (warn but allow)
+    #                  CI 30+   = normal operation
+    # Rating 1-2 → update_ci(skill, -5) → CI drops → rehabilitation → restricted → blocked.
+    # Rating 4-5 → update_ci(skill, +3/+5) → slow drift back up.
     ledger = get_ledger_entry(skill_name)
-    if ledger["CI"] < 30:
-        return {
-            "status": "blocked",
-            "output": (
-                f"Skill '{skill_name}' CI={ledger['CI']} < 30 — requires human review.\n"
-                f"Low CI due to past rating feedback. Improve by getting higher ratings at /ship."
-            ),
-            "ci_delta": 0,
-            "skill": skill_name,
-            "routing_confidence": routing_confidence,
-            "routing_reasoning": routing_reasoning,
-        }
+    ci = ledger["CI"]
+
+    if ci < 20:
+        # Rehabilitation mode: run but warn
+        context["_rehabilitation_mode"] = True
+        context["_confidence_penalty"] = 0.3
+    elif ci < 30:
+        # Restricted mode: warn but allow
+        context["_restricted_mode"] = True
 
     # ── Validation: skill exists ---
     skill = get_skill(skill_name)

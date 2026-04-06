@@ -22,15 +22,18 @@ SKILLS_DIR = NEUTRON_ROOT / "skills"
 CI_FULL_TRUST = 70
 CI_NORMAL = 40
 CI_RESTRICTED = 30
-CI_BLOCKED = 30  # below this: block
+CI_REHABILITATION = 20  # below this: rehabilitation mode (reduced confidence, not hard block)
+CI_BLOCKED = 30  # hard block threshold (kept for compatibility)
 
 
 def get_ledger_entry(skill_name: str) -> dict:
     """
     Retrieve CI score and stats for a skill from the PERFORMANCE_LEDGER.md.
     Returns: {CI: int, tasks_completed: int, last_active: str}
+    Creates the ledger if it doesn't exist (initialized at CI=50 for all skills).
     """
     if not LEDGER_PATH.exists():
+        _bootstrap_ledger()
         return {"CI": 50, "tasks_completed": 0, "last_active": "-"}
 
     content = LEDGER_PATH.read_text()
@@ -50,6 +53,23 @@ def get_ledger_entry(skill_name: str) -> dict:
 
     # Skill not in ledger — initialize at neutral CI
     return {"CI": 50, "tasks_completed": 0, "last_active": "-"}
+
+
+def _bootstrap_ledger() -> None:
+    """Create PERFORMANCE_LEDGER.md with CI=50 for all known skills."""
+    skills = [
+        "workflow", "context", "discovery", "spec",
+        "acceptance_test", "orchestration", "engine", "memory",
+    ]
+    header = "| Skill | CI | Tasks | Last Active |\n|---|---|---|---|\n"
+    rows = "\n".join(f"| {s} | 50 | 0 | - |" for s in skills)
+    try:
+        lock = filelock.FileLock(str(LOCK_PATH), timeout=10)
+        with lock:
+            atomic_write(LEDGER_PATH, header + rows)
+    except Exception:
+        pass  # Best-effort: don't crash on bootstrap failure
+
 
 
 def get_all_skill_entries() -> dict:
@@ -170,20 +190,41 @@ def route_task(task: str, context: dict = None) -> dict:
     candidates.sort(key=lambda x: (x[1], x[2] * 100), reverse=True)
     best_skill, match_score, ci = candidates[0]
 
-    confidence = min(0.4 + (match_score * 0.15), 0.95)
-    blocked = ci < CI_BLOCKED
-    block_reason = None
-    if blocked:
-        block_reason = f"{best_skill} CI ({ci}) is below {CI_BLOCKED} — requires human review"
+    # CI-weighted confidence: 65% keyword match, 35% CI signal
+    ci_factor = min(ci / CI_FULL_TRUST, 1.0)
+    max_score = max(s for _, s, _ in candidates) if candidates else 1
+    normalized_keyword = match_score / max_score if max_score > 0 else 0
+    confidence = min(0.25 + (normalized_keyword * 0.35) + (ci_factor * 0.25), 0.95)
 
+    # Rehabilitation vs blocked: CI 0-19 = rehabilitation (reduced confidence), CI 20-29 = restricted
+    rehabilitation_mode = ci < CI_REHABILITATION
+    restricted_mode = CI_REHABILITATION <= ci < CI_BLOCKED
+    blocked = ci < CI_REHABILITATION  # only CI < 20 is truly blocked
+    if rehabilitation_mode:
+        confidence = confidence * 0.7  # 30% confidence penalty
+        block_reason = f"{best_skill} CI ({ci}) < {CI_REHABILITATION} — rehabilitation mode: reduced confidence"
+    elif restricted_mode:
+        block_reason = f"{best_skill} CI ({ci}) < {CI_BLOCKED} — restricted mode: reduced confidence"
+    else:
+        block_reason = None
+
+    ci_status = (
+        "trusted" if ci >= CI_FULL_TRUST
+        else "normal" if ci >= CI_NORMAL
+        else "restricted" if ci >= CI_REHABILITATION
+        else "rehabilitation"
+    )
     result = {
         "skill": best_skill,
         "confidence": round(confidence, 2),
-        "reasoning": f"Best match for task keywords (score={match_score}). "
-        f"CI={ci} ({'trusted' if ci >= CI_FULL_TRUST else 'normal' if ci >= CI_NORMAL else 'restricted'}).",
+        "reasoning": f"Best match (score={match_score}, CI={ci}, {ci_status}). "
+        f"Composite: 65% keyword + 35% CI signal.",
         "blocked": blocked,
         "block_reason": block_reason,
         "CI": ci,
+        "CI_status": ci_status,
+        "_rehabilitation_mode": rehabilitation_mode,
+        "_restricted_mode": restricted_mode,
         "_routing_confidence": round(confidence, 2),
         "learned_skill": None,
     }

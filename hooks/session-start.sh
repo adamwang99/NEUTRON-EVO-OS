@@ -98,6 +98,45 @@ if [ -f "$NEUTRON_ROOT/engine/cli/main.py" ]; then
     # Lock auto-releases on script exit (FD 200 closes)
 fi
 
+# ── Dream Cycle Auto-Trigger ────────────────────────────────────────────────
+# Runs Dream Cycle once every 12 hours (debounce via .last_dream timestamp).
+# Runs silently in background — no output unless debugging.
+DREAM_LOCK="$MEMORY_DIR/.dream.lock"
+DREAM_LAST="$MEMORY_DIR/.last_dream"
+if [ ! -f "$DREAM_LOCK" ]; then
+    SHOULD_RUN=0
+    if [ -f "$DREAM_LAST" ]; then
+        LAST_EPOCH=$(cat "$DREAM_LAST" 2>/dev/null)
+        if [ -n "$LAST_EPOCH" ] && [ -n "${LAST_EPOCH//[0-9]/}" ]; then
+            NOW_EPOCH=$(date +%s)
+            HOURS_SINCE=$(( (NOW_EPOCH - LAST_EPOCH) / 3600 ))
+            [ "$HOURS_SINCE" -ge 12 ] && SHOULD_RUN=1
+        else
+            SHOULD_RUN=1
+        fi
+    else
+        SHOULD_RUN=1
+        date +%s > "$DREAM_LAST"
+    fi
+
+    if [ "$SHOULD_RUN" -eq 1 ] && [ -d "$COOKBOOK_DIR" ]; then
+        # Fire Dream Cycle in background — never blocks session start
+        python3 -c "
+import sys, os, threading
+NR = os.environ.get('NEUTRON_ROOT', '$NEUTRON_ROOT')
+sys.path.insert(0, NR)
+try:
+    from engine.dream_engine import dream_cycle
+    def run():
+        r = dream_cycle(json_output=True)
+        print(f'🌙 Dream Cycle: {r[\"status\"]}', flush=True)
+    threading.Thread(target=run, daemon=True).start()
+except Exception as e:
+    pass  # silent: never interrupt session start
+" > /dev/null 2>&1 &
+    fi
+fi
+
 # ── Load checkpoint if exists ────────────────────────────────────────────────
 # Checkpoint CLI writes to memory/YYYY-MM-DD.md as "## [HH:MM] — Task:" entries.
 # Find the most recent memory log and show the last checkpoint entry.

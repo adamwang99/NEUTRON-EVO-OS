@@ -16,9 +16,7 @@
 
 ## Local Docs
 
-See `NEUTRON_CONTEXT.md` for the full system context. Additional docs:
-
-- `WORKFLOW_MEMORY.md` — Memory system: how to record & retrieve learnings
+See `NEUTRON_CONTEXT.md` for the full system context.
 - `memory/LEARNED.md` — **Bug fixes & patterns: read before starting any fix**
 - `engine/` — NEUTRON CLI engine implementation
 - `mcp_server/` — MCP server (stdio, SSE, HTTP, WebSocket)

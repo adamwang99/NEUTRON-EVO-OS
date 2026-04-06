@@ -135,10 +135,18 @@ def _update_ci_from_rating(shipment: dict) -> None:
     This makes CI a real quality signal, not just an activity counter.
     """
     rating = shipment.get("rating")
-    if rating is None or rating >= 3:
+    if rating is None:
         return
 
-    delta = -3 if rating == 2 else -5
+    if rating >= 4:
+        # Positive: good delivery → slow upward drift
+        delta = 3 if rating == 4 else 5  # rating 4 → +3, rating 5 → +5
+    elif rating == 3:
+        # Neutral: no change
+        return
+    else:
+        # Negative: drop CI
+        delta = -3 if rating == 2 else -5  # rating 2 → -3, rating 1 → -5
 
     # Map workflow step → skill name that was responsible
     step_to_skill = {

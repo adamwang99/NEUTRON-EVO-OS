@@ -659,6 +659,12 @@ def _dream_cycle_inner() -> dict:
     except Exception:
         pass
 
+    # Update last_dream timestamp in skill metadata (best-effort)
+    try:
+        _update_last_dream_timestamp()
+    except Exception:
+        pass
+
     return {
         "status": "dream_complete",
         "timestamp": timestamp,
@@ -676,3 +682,32 @@ def _dream_cycle_inner() -> dict:
         "cookbook_patterns": len(all_cookbook_sections),
         "ai_errors": ai_errors,
     }
+
+
+def _update_last_dream_timestamp() -> None:
+    """
+    Write today's date as last_dream in all core skill SKILL.md frontmatters.
+    This makes last_dream observable so agents can see when Dream Cycle last ran.
+    """
+    from engine._atomic import atomic_write
+    today = datetime.now().date().isoformat()
+    skills_dir = NEUTRON_ROOT / "skills"
+
+    for skill_md in skills_dir.glob("core/*/SKILL.md"):
+        try:
+            content = skill_md.read_text()
+            if "last_dream:" in content:
+                # Replace "last_dream: null" with actual date, or append if missing
+                if "last_dream: null" in content:
+                    new_content = content.replace("last_dream: null",
+                        f"last_dream: {today}")
+                elif re.search(r"^last_dream:\s*\d{4}-\d{2}-\d{2}", content, re.MULTILINE):
+                    new_content = re.sub(
+                        r"^last_dream:\s*\d{4}-\d{2}-\d{2}",
+                        f"last_dream: {today}",
+                        content, count=1, flags=re.MULTILINE)
+                else:
+                    continue  # No last_dream field at all
+                atomic_write(skill_md, new_content)
+        except Exception:
+            pass  # Best-effort: never crash Dream Cycle on metadata update
