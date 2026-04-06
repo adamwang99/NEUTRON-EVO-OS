@@ -4,6 +4,43 @@ All notable changes are documented here. The format follows [Keep a Changelog](h
 
 ---
 
+## [4.5.1] — 2026-04-06 — Adversarial Audit R2: HIGH/MEDIUM Hardening
+
+### Security Hardening
+
+- **HIGH: `hooks/dangerous-actions-blocker.sh` rm bypass (R1)** — Word-based parsing replaces broken regex; `rm -rf./path`, `ddif=data`, system-dir `cp/mv` now blocked correctly.
+- **HIGH: `build-error-resolver` allowlist bypass** — `shutil.which()` validates binary resolves to a standard bin path (`/usr/bin`, `/usr/local/bin`, `/snap/bin`, `/opt`). `/tmp/evil/pytest` bypass now rejected.
+- **MEDIUM: `session-start.sh` Python injection** — Replaced `open('$SNAPSHOT')` in `-c` string with a temp Python script (`mktemp` + heredoc). SNAPSHOT path can no longer inject Python code.
+- **MEDIUM: `session-end.sh` zombie prevention** — `nohup bash -c "..." & disown` replaces bare `&`. Background children survive parent exit without becoming zombies.
+
+### Process Safety
+
+- **CRITICAL: `config.py` filelock** — `_save()` now uses filelock + atomic write; concurrent config writes no longer corrupt `memory/.mcp_config.json`.
+- **CRITICAL: `checkpoint_cli.py` filelock** — `_write_atomic()` with filelock added; concurrent checkpoint writes no longer interleave.
+- **HIGH: `learned_skill_builder._record_invocation()`** — Filelock wraps entire load→save cycle; concurrent invocations no longer silently lose counts.
+
+### Resource Management
+
+- **MEDIUM: `auth.py` rate bucket leak** — TTL eviction (60s idle) + hard cap (10K entries) + lazy cleanup every 1000 calls. Unbounded memory growth from guessed API keys eliminated.
+- **HIGH: `mcp_server/auth.py` timing attack** — Dummy `hmac.compare_digest()` runs even when header is absent, making execution time identical for "no key" vs "wrong key".
+
+### Information Disclosure
+
+- **HIGH: `/ready` endpoint** — Removed `engine_found` boolean that leaked existence of `engine/` directory. Now returns only `{"status": "ok"}`.
+- **HIGH: `hooks/pretool-backup.sh` option injection** — `realpath -- FILEPATH` now stops option parsing; `FILEPATH="--relative-to=/etc /etc/passwd"` no longer injects realpath options.
+
+### Crash Safety
+
+- **CRITICAL: `dream_engine._write_cookbook()`** — Cookbook now uses `_atomic_write()` instead of plain `write_text()`.
+- **CRITICAL: `dream_engine` Phase 5 log truncation** — Active log truncation now uses `_atomic_write()`.
+- **HIGH: `skill_execution._write_execution_log()`** — `Timeout: pass` replaced with `logger.warning()` so lock contention is detectable.
+
+### Test Infrastructure
+
+- **`tests/test_dream_engine.py`** — `autouse` fixture clears `_DREAM_LOCK_CACHE` + removes stale `memory/.dream.lock` before each test; prevents cross-test lock pollution.
+
+---
+
 ## [4.5.0] — 2026-04-06 — Adversarial Audit Round 2
 
 ### Security Fixes
