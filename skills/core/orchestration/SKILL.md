@@ -33,16 +33,20 @@ run_orchestration(task, {"phase": "merge"})    → Validate + merge results
 run_orchestration(task, {"phase": "report"})    → Final summary
 ```
 
-### Execute Phase — /batch Spawning
+### Execute Phase — neutron_spawn_agent
 
-The `execute` phase returns unit configs. Use `/batch` to spawn agents in parallel:
+The `execute` phase returns unit configs. Call `neutron_spawn_agent` for each unit via MCP:
 
 ```
-1. After run_orchestration(..., phase="execute"):
-2. Each unit is a /batch command — copy the instruction block
-3. Run multiple /batch in parallel (Claude Code's worktree isolation prevents conflicts)
-4. When all /batch complete, call run_orchestration(..., phase="merge")
+1. run_orchestration(..., phase="execute") → unit configs in output
+2. For each unit: call neutron_spawn_agent(agent_id=unit_id, prompt=unit_prompt, ...)
+   → agents run in parallel via claude-agent-sdk
+3. Wait for results (or use background=True for non-blocking)
+4. run_orchestration(..., phase="merge", results={...}) → validate + merge
 ```
+
+Each spawned agent uses Claude Code's tools (Read/Edit/Bash/Glob/Grep) with its own context window.
+Agents can run in the same project or different subdirectories (use `cwd` param to isolate).
 
 ```python
 # After run_orchestration(..., phase="execute"):
@@ -157,17 +161,23 @@ Present a structured plan to the user:
 Proceed? (YES / Modify plan / CANCEL)
 ```
 
-### Phase 4: Spawn /batch for Each Unit
+### Phase 4: Spawn neutron_spawn_agent for Each Unit
 
-**For each unit, run `/batch` with the unit config:**
+**For each unit, call `neutron_spawn_agent` via MCP:**
 1. Copy the unit instruction from the `execute` phase output
-2. Run multiple `/batch` in parallel (git worktree isolation prevents conflicts)
+2. Run multiple agents in parallel via `neutron_spawn_agent(agent_id=..., prompt=..., cwd=...)`
 3. Track progress with `phase='update', unit_id='...', result={...}`
 4. After all complete, call `phase='merge'`
 
-**/batch command pattern:**
+**neutron_spawn_agent pattern:**
 ```
-/batch <unit-specific instruction from execute phase>
+neutron_spawn_agent(
+    agent_id="unit-1-backend",
+    prompt="Implement auth module: JWT tokens, refresh flow, RBAC...",
+    tools=["Read", "Edit", "Bash", "Glob", "Grep"],
+    cwd="/path/to/project",
+    timeout_seconds=600,
+)
 ```
 
 ### Phase 5: Progress Tracking
@@ -233,17 +243,18 @@ Present unified results:
 ## How Orchestration Works with Claude Code
 
 Orchestration is a **phase-based planning skill**. The `execute` phase outputs
-unit configs that YOU use with `/batch`:
+unit configs that YOU spawn via `neutron_spawn_agent`:
 
 ```
 1. run_orchestration(phase='analyze')  → Decompose task into units
 2. run_orchestration(phase='plan')      → Review decomposition, confirm
 3. run_orchestration(phase='execute')   → Get unit configs
-4. /batch <unit-1-instruction>          ← Spawn parallel agents
-   /batch <unit-2-instruction>          ← (git worktree isolation)
-   /batch <unit-3-instruction>
+4. neutron_spawn_agent(...) for each unit  ← parallel Claude Code agents
 5. run_orchestration(phase='merge')      → Validate + merge results
 ```
+
+**Real parallel execution**: `neutron_spawn_agent` uses `claude-agent-sdk` internally.
+Each agent has its own context window and Claude Code tools.
 
 ---
 

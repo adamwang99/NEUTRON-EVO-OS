@@ -4,6 +4,8 @@ NEUTRON skills exposed as MCP tools via skill_execution.run().
 """
 from __future__ import annotations
 
+import asyncio
+import concurrent.futures
 import sys
 from pathlib import Path
 
@@ -216,6 +218,57 @@ def list_tools():
                 "required": [],
             },
         },
+        {
+            "name": "neutron_spawn_agent",
+            "description": (
+                "Spawn a Claude Code agent via claude-agent-sdk. "
+                "Runs in parallel with the main agent. "
+                "Each agent has its own context window and can use Read/Edit/Bash/Glob/Grep. "
+                "For orchestrating parallel task execution. "
+                "Tools list default: Read, Glob, Grep (read-only). "
+                "Add Edit, Bash, Write for full capability."
+            ),
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "agent_id": {
+                        "type": "string",
+                        "description": "Identifier for this agent (e.g. 'backend-dev', 'tester')",
+                    },
+                    "prompt": {
+                        "type": "string",
+                        "description": "Task description for the agent",
+                    },
+                    "tools": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Allowed tools (default: Read, Glob, Grep)",
+                        "default": ["Read", "Glob", "Grep"],
+                    },
+                    "model": {
+                        "type": "string",
+                        "description": "Model override (e.g. 'claude-opus-4-20250514', 'claude-sonnet-4-20250514')",
+                    },
+                    "max_turns": {
+                        "type": "integer",
+                        "description": "Max turns before stopping (default: 50)",
+                    },
+                    "cwd": {
+                        "type": "string",
+                        "description": "Working directory for the agent (default: current NEUTRON_ROOT)",
+                    },
+                    "env": {
+                        "type": "object",
+                        "description": "Environment variables for the agent",
+                    },
+                    "timeout_seconds": {
+                        "type": "integer",
+                        "description": "Max time to wait for result (default: 300s)",
+                    },
+                },
+                "required": ["prompt"],
+            },
+        },
     ]
 
 
@@ -240,6 +293,9 @@ def call_tool(name: str, arguments: dict) -> dict:
     skill_name = tool_to_skill.get(name)
 
     if not skill_name:
+        # Handle special tools that don't map to skills
+        if name == "neutron_spawn_agent":
+            return _spawn_agent(arguments)
         return {
             "content": [{"type": "text", "text": f"Unknown tool: {name}"}],
         }
@@ -293,4 +349,116 @@ def _run_skill(skill_name: str, task: str, arguments: dict) -> dict:
 
     return {
         "content": [{"type": "text", "text": f"[{status}]{ci_str}\n\n{output_text}"}],
+    }
+
+
+# ── Agent Spawning ───────────────────────────────────────────────────────────────
+
+def _spawn_agent(args: dict) -> dict:
+    """
+    Spawn a Claude Code agent via claude-agent-sdk.
+
+    This is how NEUTRON achieves real parallel execution:
+    - Main agent calls neutron_spawn_agent (blocking or async)
+    - Claude Code agent runs the subtask independently
+    - Result returned to main agent for synthesis
+
+    Usage via MCP:
+      neutron_spawn_agent(
+          agent_id="backend-dev",
+          prompt="Implement the auth module: JWT tokens, refresh flow, RBAC...",
+          tools=["Read", "Edit", "Bash", "Glob", "Grep"],
+          cwd="/path/to/project",
+          timeout_seconds=300,
+      )
+    """
+    import os as _os
+
+    agent_id = args.get("agent_id", "agent")
+    prompt = args.get("prompt", "")
+    tools = args.get("tools", ["Read", "Glob", "Grep"])
+    model = args.get("model")
+    max_turns = args.get("max_turns", 50)
+    cwd = args.get("cwd")
+    env_extra = args.get("env", {})
+    timeout_seconds = args.get("timeout_seconds", 300)
+
+    if not prompt:
+        return {
+            "content": [{"type": "text", "text": "[error] neutron_spawn_agent: 'prompt' is required"}],
+        }
+
+    # Resolve cwd: default to NEUTRON_ROOT
+    if not cwd:
+        try:
+            from mcp_server.http_transport import get_current_neutron_root
+            cwd = str(get_current_neutron_root())
+        except Exception:
+            cwd = str(_REPO_ROOT)
+
+    # Build env: inherit current env + any extra vars
+    env = dict(_os.environ)
+    env["NEUTRON_ROOT"] = cwd
+    env.update(env_extra)
+
+    try:
+        from claude_agent_sdk import query, ClaudeAgentOptions
+    except ImportError:
+        return {
+            "content": [{"type": "text", "text": "[error] claude-agent-sdk not installed. Run: pip install claude-agent-sdk"}],
+        }
+
+    # Build options
+    opts = ClaudeAgentOptions(
+        allowed_tools=tools,
+        cwd=cwd,
+        env=env,
+        max_turns=max_turns,
+    )
+    if model:
+        opts.model = model
+
+    # Collect output via ThreadPoolExecutor so we can timeout
+    result_parts: list[str] = []
+    errors: list[str] = []
+
+    def _collect():
+        try:
+            for msg in query(prompt, opts):
+                msg_type = type(msg).__name__
+                if hasattr(msg, "result") and msg.result:
+                    result_parts.append(str(msg.result)[:500])
+                elif hasattr(msg, "content") and msg.content:
+                    result_parts.append(str(msg.content)[:500])
+                elif msg_type == "ResultMessage":
+                    result_parts.append(str(getattr(msg, "result", ""))[:500])
+        except Exception as e:
+            errors.append(str(e)[:200])
+
+    try:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+            fut = pool.submit(_collect)
+            fut.result(timeout=timeout_seconds)
+    except concurrent.futures.TimeoutError:
+        errors.append(f"timeout after {timeout_seconds}s")
+    except Exception as e:
+        errors.append(str(e)[:200])
+
+    output = "\n".join(result_parts[-20:])  # last 20 chunks max
+    if errors:
+        output += f"\n[spawn errors: {'; '.join(errors)}]"
+
+    # Truncate to reasonable MCP size
+    MAX = 1000
+    if len(output) > MAX:
+        output = output[:MAX] + f"\n... [truncated, {len(output) - MAX} chars more]"
+
+    return {
+        "content": [{
+            "type": "text",
+            "text": (
+                f"[agent:{agent_id} completed]\n\n"
+                f"{output or '(no output)'}"
+            ),
+        }],
     }
