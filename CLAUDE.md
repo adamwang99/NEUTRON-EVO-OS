@@ -18,22 +18,39 @@
 
 See `NEUTRON_CONTEXT.md` for the full system context.
 - `memory/LEARNED.md` — **Bug fixes & patterns: read before starting any fix**
+- `memory/archived/AUDIT_NOTES_2026-04-06.md` — Full system audit (scores, CI state, remaining issues)
 - `engine/` — NEUTRON CLI engine implementation
 - `mcp_server/` — MCP server (stdio, SSE, HTTP, WebSocket)
 - `skills/` — Claude Code skill definitions
-- `hooks/` — Session hooks (session-start.sh, pretool-backup.sh, auto-sync.sh, gc_lightweight.py)
-- `memory/` — Session logs and discoveries
+- `hooks/` — Session hooks (session-start.sh, gc_lightweight.py)
+- `memory/` — Session logs, cookbooks, shipments, learned
 
 ## Key Conventions
 
-- Follow NEUTRON EVO OS workflow: `/discover → /spec → /build → /verify → /ship`
-- Auto-confirm gates controlled by `memory/.auto_confirm.json`
-- SessionStart hook (session-start.sh) runs automatically at session start
+- Follow NEUTRON EVO OS workflow: `explore → discovery → spec → build → verify → acceptance → ship`
+- Auto-confirm gates: `memory/.auto_confirm.json` controls bypass
+- SessionStart: runs GC, injects LEARNED bugs + cookbook patterns, triggers Dream Cycle (12h debounce)
+- CI routing: keyword-based (65%) + CI signal (35%) — see `engine/expert_skill_router.py`
+- Swarm agents: `spawn_parallel(unit_configs)` in `mcp_server/tools.py` — true N-agent parallel
+- Distill: ship step writes `memory/pending/LEARNED_pending.md` for review
+
+## CI Thresholds (live)
+
+| CI Range | Status | Behavior |
+|----------|--------|----------|
+| 70-100 | Trusted | Auto-confirm enabled |
+| 40-69 | Normal | Standard operation |
+| 20-29 | Restricted | Warning, still runs |
+| 0-19 | Rehabilitation | Confidence ×0.7, still runs |
+
+Rating: 5→+5 CI, 4→+3 CI, 3→0, 2→-3 CI, 1→-5 CI. Skills: `PERFORMANCE_LEDGER.md`.
 
 ## Known Issues & Guards
 
-- **Directory boundary**: Observer (`SilentObserver`) and GC are scoped to the active project root. Root path validation rejects parent directories and non-project paths to prevent scanning sibling projects. `stop()` requires the exact root that was used to start. See `memory/LEARNED.md` for full bug history.
-- **PreLoadMemory**: Not a valid Claude Code hook — do not use in settings.json. Use `SessionStart` hook with `type: "command"` to echo files.
+- **Dream Cycle AI**: Requires `ANTHROPIC_API_KEY` env var (Anthropic format, not OpenAI sk-). Non-AI phases (archive, prune, distill) work without it.
+- **Directory boundary**: Observer and GC scoped to project root only.
+- **PreLoadMemory**: Not a valid hook. Use SessionStart instead.
+- Legacy docs archived to `memory/archived/` (CHANGELOG, SYSTEM_REVIEW, ARCHITECTURE, WORKFLOW_MEMORY).
 
 ## Forbidden
 
