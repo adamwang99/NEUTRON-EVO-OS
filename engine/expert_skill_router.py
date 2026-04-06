@@ -39,16 +39,17 @@ def get_ledger_entry(skill_name: str) -> dict:
     content = LEDGER_PATH.read_text()
 
     # Find the skill row (case-insensitive)
+    # Actual format: | Skill | CI | Last Active |  (3 columns)
     pattern = re.compile(
-        rf"^\|\s*{re.escape(skill_name)}\s*\|.*?(\d+).*?\|.*?(\d+).*?\|\s*(.*?)\s*\|",
+        rf"^\|\s*{re.escape(skill_name)}\s*\|\s*(\d+)\s*\|\s*([^*|\n][^\n]*?)\s*\|",
         re.IGNORECASE | re.MULTILINE,
     )
     match = pattern.search(content)
     if match:
         return {
             "CI": int(match.group(1)),
-            "tasks_completed": int(match.group(2)),
-            "last_active": match.group(3).strip(),
+            "tasks_completed": 0,
+            "last_active": match.group(2).strip().rstrip("|").strip(),
         }
 
     # Skill not in ledger — initialize at neutral CI
@@ -56,13 +57,13 @@ def get_ledger_entry(skill_name: str) -> dict:
 
 
 def _bootstrap_ledger() -> None:
-    """Create PERFORMANCE_LEDGER.md with CI=50 for all known skills."""
+    """Create PERFORMANCE_LEDGER.md with CI=50 for all known skills (3-column format)."""
     skills = [
         "workflow", "context", "discovery", "spec",
         "acceptance_test", "orchestration", "engine", "memory",
     ]
-    header = "| Skill | CI | Tasks | Last Active |\n|---|---|---|---|\n"
-    rows = "\n".join(f"| {s} | 50 | 0 | - |" for s in skills)
+    header = "| Skill | CI | Last Active |\n|---|---|---|\n"
+    rows = "\n".join(f"| {s} | 50 | - |" for s in skills)
     try:
         lock = filelock.FileLock(str(LOCK_PATH), timeout=10)
         with lock:
@@ -177,13 +178,22 @@ def route_task(task: str, context: dict = None) -> dict:
     if not candidates:
         # Default to workflow for unknown tasks
         entry = get_ledger_entry("workflow")
+        ci = entry["CI"]
+        ci_status = (
+            "trusted" if ci >= CI_FULL_TRUST
+            else "normal" if ci >= CI_NORMAL
+            else "restricted" if ci >= CI_REHABILITATION
+            else "rehabilitation"
+        )
+        blocked = ci < CI_REHABILITATION
         return {
             "skill": "workflow",
             "confidence": 0.3,
-            "reasoning": "No keyword match — defaulting to workflow skill.",
-            "blocked": entry["CI"] < CI_BLOCKED,
-            "block_reason": "workflow CI below threshold" if entry["CI"] < CI_BLOCKED else None,
-            "CI": entry["CI"],
+            "reasoning": f"No keyword match — defaulting to workflow (CI={ci}, {ci_status}).",
+            "blocked": blocked,
+            "block_reason": f"workflow CI ({ci}) < {CI_REHABILITATION}" if blocked else None,
+            "CI": ci,
+            "CI_status": ci_status,
         }
 
     # Sort by match score desc, then CI desc (numeric, not lexicographic)
@@ -277,24 +287,30 @@ def update_ci(skill_name: str, delta: int) -> dict:
         content = LEDGER_PATH.read_text()
         entry = get_ledger_entry(skill_name)
         new_ci = max(0, min(100, entry["CI"] + delta))
-        new_tasks = entry["tasks_completed"] + (1 if delta > 0 else 0)
         from datetime import datetime
 
         new_active = datetime.now().strftime("%Y-%m-%d")
 
-        # Regex replace the skill row
+        # Regex replace the skill row (3-column format: Skill | CI | Last Active)
+        # Group 1: leading | and whitespace + skill name + | whitespace
+        # Group 2: CI number + | whitespace
+        # Group 3: Last Active text + trailing |
         pattern = re.compile(
-            rf"(\|\s*{re.escape(skill_name)}\s*\|\s*)\d+(\s*\|\s*)\d+(\s*\|\s*)[^|]+(\s*\|)",
+            rf"(\|\s*{re.escape(skill_name)}\s*\|\s*)\d+(\s*\|\s*)[^\n]+?(\s*\|)",
             re.IGNORECASE,
         )
-        replacement = rf"\g<1>{new_ci}\g<2>{new_tasks}\g<3>{new_active}\4"
+        replacement = rf"\g<1>{new_ci}\g<2>{new_active} |"
         new_content, count = pattern.subn(replacement, content)
 
         if count == 0:
-            return {"CI": entry["CI"], "error": f"Skill '{skill_name}' not found in ledger"}
+            # Row doesn't exist — append it
+            new_row = f"\n| {skill_name} | {new_ci} | {new_active} |"
+            new_content = content.rstrip() + new_row
+            count = 1
+            return {"CI": entry["CI"], "last_active": "-", "error": f"Skill '{skill_name}' not found in ledger"}
 
         atomic_write(LEDGER_PATH, new_content)
-        return {"skill": skill_name, "CI": new_ci, "tasks_completed": new_tasks, "last_active": new_active}
+        return {"skill": skill_name, "CI": new_ci, "last_active": new_active}
 
 
 def audit() -> dict:
