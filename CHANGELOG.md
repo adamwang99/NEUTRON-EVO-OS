@@ -4,6 +4,30 @@ All notable changes are documented here. The format follows [Keep a Changelog](h
 
 ---
 
+## [4.5.0] — 2026-04-06 — Adversarial Audit Round 2
+
+### Security Fixes
+
+- **CRITICAL: `hooks/dangerous-actions-blocker.sh` rm bypass** — Regex `^[[:space:]]*(sudo[[:space:]]+)?rm[[:space:]]+(-[rf]+\s+)?...` required whitespace after `-rf` flags. `rm -rf./file` bypassed detection. Fixed: word-based pattern detection parses command into individual words, checks `rm` + `-rf`/`-r`+`-f` combos independently. Also fixed `dd` block (no space required for `of=`), system-dir `cp/mv` (word-by-word scan), and `find -delete` patterns.
+- **CRITICAL: `mcp_server/auth.py` timing attack** — Missing header returned `False` immediately; invalid header ran `hmac.compare_digest` (slow). Timing delta revealed key presence. Fixed: always execute dummy `hmac.compare_digest` on empty path, making execution time identical.
+- **CRITICAL: `skills/core/memory` path traversal** — `_archive_file()` accepted any readable path (`../../../etc/passwd`) and archived it into `memory/archived/`. Fixed: `p.resolve().relative_to(_NEUTRON_ROOT)` validates path stays inside project.
+
+### Concurrency Fixes
+
+- **CRITICAL: `mcp_server/config.py` filelock** — `_save()` was unwritten. Concurrent `_load()` → `_save()` races could corrupt `memory/.mcp_config.json`. Fixed: filelock + atomic write (temp file + fsync + rename).
+- **CRITICAL: `engine/checkpoint_cli.py` unwritten writes** — `checkpoint_path.write_text(new_content)` had no filelock. Concurrent `neutron checkpoint` calls from multiple sessions interleaved writes. Fixed: `_write_atomic()` with filelock + atomic write.
+- **CRITICAL: `engine/dream_engine.py` unwritten Phase 5 writes** — `_write_cookbook()` and active log truncation used plain `write_text()`. Dream Cycle crash mid-write left log corrupted. Fixed: both use `_atomic_write()`.
+
+### Crash Safety
+
+- **HIGH: `engine/skill_execution.py` silent log loss** — `except Timeout: pass` in `_write_execution_log()` silently dropped audit trail when filelock timed out. Fixed: `logger.warning()` so contention is detectable, not invisible.
+
+### Test Infrastructure
+
+- **FIX: `tests/test_dream_engine.py` lock pollution** — `autouse` fixture now clears `_DREAM_LOCK_CACHE` before/after each test AND removes stale `memory/.dream.lock` files. Prevents cross-test lock state pollution.
+
+---
+
 ## [4.4.0] — 2026-04-06 — Adversarial Audit + Regression Guard + P0 Security Fixes
 
 ### New Features
