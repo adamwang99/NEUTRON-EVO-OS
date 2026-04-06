@@ -74,12 +74,50 @@ def get_all_skill_entries() -> dict:
     return entries
 
 
+def _find_matching_learned_skills(task: str) -> list[dict]:
+    """
+    Check if any registered learned skill matches task keywords.
+    This enables AUTO-INVOKE of learned skills — not just manual invocation.
+
+    Returns: list of {slug, score, tags} sorted by score desc.
+    Match score >= 0.7 = strong match, suggest as primary routing target.
+    """
+    import json
+    learned_dir = SKILLS_DIR / "learned"
+    if not learned_dir.exists():
+        return []
+
+    keywords = set(re.findall(r'\w{4,}', task.lower()))
+    scored = []
+
+    for skill_dir in learned_dir.iterdir():
+        if not skill_dir.is_dir():
+            continue
+        meta_file = skill_dir / ".meta.json"
+        if not meta_file.exists():
+            continue
+        try:
+            meta = json.loads(meta_file.read_text())
+            tags = set(meta.get("tags", []))
+            slug_words = set(re.findall(r'\w{4,}', skill_dir.name.lower()))
+            overlap = keywords & (tags | slug_words)
+            if len(overlap) >= 2:
+                denom = len(keywords | (tags | slug_words))
+                score = len(overlap) / denom if denom else 0
+                if score >= 0.3:  # minimum threshold
+                    scored.append({"slug": skill_dir.name, "score": score, "tags": list(tags)})
+        except Exception:
+            continue
+
+    return sorted(scored, key=lambda x: x["score"], reverse=True)
+
+
 def route_task(task: str, context: dict = None) -> dict:
     """
     Route a task to the best matching skill.
-    Performs pre-route CI audit.
+    Performs pre-route CI audit + learned skill auto-match.
 
-    Returns: {skill, confidence, reasoning, blocked, block_reason}
+    Returns: {skill, confidence, reasoning, blocked, block_reason, learned_skill}
     """
     from datetime import datetime
 
@@ -138,7 +176,7 @@ def route_task(task: str, context: dict = None) -> dict:
     if blocked:
         block_reason = f"{best_skill} CI ({ci}) is below {CI_BLOCKED} — requires human review"
 
-    return {
+    result = {
         "skill": best_skill,
         "confidence": round(confidence, 2),
         "reasoning": f"Best match for task keywords (score={match_score}). "
@@ -146,8 +184,21 @@ def route_task(task: str, context: dict = None) -> dict:
         "blocked": blocked,
         "block_reason": block_reason,
         "CI": ci,
-        "_routing_confidence": round(confidence, 2),  # caller can pass to skill_execution.run
+        "_routing_confidence": round(confidence, 2),
+        "learned_skill": None,
     }
+
+    # Learned skill auto-match: suggest if strong keyword match
+    if confidence >= 0.55:
+        learned_matches = _find_matching_learned_skills(task)
+        if learned_matches:
+            top = learned_matches[0]
+            if top["score"] >= 0.7:
+                result["learned_skill"] = top["slug"]
+                result["learned_match_score"] = round(top["score"], 2)
+                result["learned_tags"] = top["tags"]
+
+    return result
 
 
 def execute_skill(skill_path: str, task: str, context: dict = None) -> dict:

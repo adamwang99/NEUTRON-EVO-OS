@@ -111,60 +111,22 @@ if [ -n "$LATEST_LOG" ]; then
     fi
 fi
 
-# ── Load LEARNED.md (bug fixes & patterns — never repeat the same mistake) ───
+# ── Load LEARNED.md — RECALL: relevant bugs before coding ────────────────────
+# Shows last 2 structured entries (Bug: format) as structured context.
+# ~20 lines, ~400 tokens — no terminal spam.
 LEARNED="$MEMORY_DIR/LEARNED.md"
 if [ -f "$LEARNED" ]; then
-    # Show last 3 entries only (most recent first)
-    TOTAL=$(grep -c "^## \[" "$LEARNED" 2>/dev/null || echo 0)
-    if [ "$TOTAL" -gt 0 ]; then
+    LAST_LEARNED=$(awk '
+        /^## \[.*\] Bug: / { section=1; lines=$0; next }
+        section && /^## \[/ { section=0 }
+        section { lines = lines ORS $0 }
+        END { if (section) print lines }
+    ' "$LEARNED" 2>/dev/null | tail -2)
+    if [ -n "$LAST_LEARNED" ]; then
         echo ""
-        echo "📚 LEARNED.md — $TOTAL bug fix(es) recorded"
-        # Print the last section block (from last "## " to end)
-        LAST_LEARNED=$(awk '/^## \[.*\] Bug: /{section=$0} section{body=section ORS $0} END{print body}' "$LEARNED" 2>/dev/null | tail -20)
-        if [ -n "$LAST_LEARNED" ]; then
-            echo "$LAST_LEARNED" | sed 's/^/   /'
-        fi
+        echo "## RECENT BUGS (memory/LEARNED.md) — apply before coding:"
+        echo "$LAST_LEARNED"
     fi
-fi
-
-# ── Load hub LEARNED.md (accumulated from all projects) ──────────────────────
-# NEUTRON_HUB points to ~/.neutron-evo-os — cross-project knowledge base.
-# Skip if hub is same as local (hub project itself has no separate hub).
-if [ -n "$NEUTRON_HUB" ] && [ -d "$NEUTRON_HUB/memory" ] && [ "$NEUTRON_HUB" != "$NEUTRON_ROOT" ]; then
-    HUB_LEARNED="$NEUTRON_HUB/memory/LEARNED.md"
-    if [ -f "$HUB_LEARNED" ]; then
-        HUB_TOTAL=$(grep -c "^## \[" "$HUB_LEARNED" 2>/dev/null || echo 0)
-        if [ "$HUB_TOTAL" -gt 0 ]; then
-            echo ""
-            echo "📡 HUB LEARNED.md — $HUB_TOTAL bug fix(es) from all projects"
-            # Show last 3 hub entries (most recent bugs from any project)
-            HUB_LAST=$(awk '/^## \[.*\] Bug: /{section=$0} section{body=section ORS $0} END{print body}' "$HUB_LEARNED" 2>/dev/null | tail -25)
-            if [ -n "$HUB_LAST" ]; then
-                echo "$HUB_LAST" | sed 's/^/   /'
-            fi
-        fi
-    fi
-fi
-
-# ── Load LEARNED pending entries (AI suggestions awaiting human approval) ─────
-PENDING="$MEMORY_DIR/pending/LEARNED_pending.md"
-if [ -f "$PENDING" ]; then
-    PENDING_COUNT=$(grep -c "^\[PENDING\]" "$PENDING" 2>/dev/null || echo 0)
-    if [ "$PENDING_COUNT" -gt 0 ]; then
-        echo ""
-        echo "📋 $PENDING_COUNT pending LEARNED entry/entries — awaiting your approval"
-        echo "   neutron memory approve <draft_id>   OR   neutron memory reject <draft_id>"
-        echo "   neutron memory pending              ← list all"
-        head -12 "$PENDING" | sed 's/^/   /'
-    fi
-fi
-
-# ── Load most recent cookbook (distilled knowledge from Dream Cycle) ───────
-COOKBOOK=$(find "$MEMORY_DIR/cookbooks" -name "*.md" -type f -printf "%T@ %p\n" 2>/dev/null | sort -rn | head -1 | cut -d' ' -f2-)
-if [ -n "$COOKBOOK" ] && [ -f "$COOKBOOK" ]; then
-    echo ""
-    echo "📖 Recent cookbook: $(basename "$COOKBOOK")"
-    head -15 "$COOKBOOK" 2>/dev/null | sed 's/^/   /'
 fi
 
 # ── Context Snapshot (recovery after /compact) ─────────────────────────────

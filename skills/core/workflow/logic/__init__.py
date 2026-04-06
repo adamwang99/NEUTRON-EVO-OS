@@ -441,6 +441,41 @@ def _record_spec_approval(approved: bool, context: dict) -> dict:
         }
 
 
+def _check_learned_for_task(task: str) -> dict:
+    """
+    Search LEARNED.md for bugs relevant to this task.
+    Returns: {matches: bool, entries: list[str], count: int}
+    This implements RECALL at decision time — the core intelligence loop.
+    """
+    import re
+    learned_path = MEMORY_DIR / "LEARNED.md"
+    if not learned_path.exists():
+        return {"matches": False, "entries": [], "count": 0}
+
+    # Extract domain keywords from task (filter stopwords)
+    stopwords = {
+        "the", "this", "that", "with", "from", "have", "been", "will",
+        "for", "are", "was", "and", "but", "not", "what", "how", "when",
+        "where", "why", "your", "task", "fix", "add", "update", "remove",
+        "implement", "build", "create", "delete", "change", "improve",
+    }
+    words = [w.lower() for w in re.findall(r'\w{5,}', task)
+             if w.lower() not in stopwords]
+
+    if not words:
+        return {"matches": False, "entries": [], "count": 0}
+
+    content = learned_path.read_text()
+    matches = []
+    for line in content.splitlines():
+        if any(w in line.lower() for w in words[:10]):
+            stripped = line.strip()
+            if stripped.startswith('- **') or stripped.startswith('**'):
+                matches.append(stripped[:120])
+
+    return {"matches": bool(matches), "entries": matches[:5], "count": len(matches)}
+
+
 def _step_build(task: str, context: dict) -> dict:
     """Step 4: Implement exactly what SPEC says."""
     gate = _load_gate()
@@ -467,6 +502,16 @@ def _step_build(task: str, context: dict) -> dict:
             "ci_delta": 0,
         }
 
+    # RECALL: query LEARNED.md for relevant past bugs BEFORE writing any code.
+    # This is the core intelligence loop — prevent repeating known mistakes.
+    learned = _check_learned_for_task(task)
+    learned_warn = ""
+    if learned["matches"]:
+        learned_warn = (
+            f"\n⚠️  Related bugs in LEARNED.md ({learned['count']} matches):\n"
+            + "\n".join(f"   {e}" for e in learned["entries"][:3])
+        )
+
     # Anti-slop check
     output = context.get("output", "")
     slop_signals = ["as per your request", "simply", "just", "of course", "here is the"]
@@ -486,7 +531,11 @@ def _step_build(task: str, context: dict) -> dict:
 
     return {
         "status": "ok",
-        "output": f"Build started: {task[:60]}\nSPEC.md approved. Only implementing what SPEC says.",
+        "output": (
+            f"Build started: {task[:60]}\n"
+            f"SPEC.md approved. Only implementing what SPEC says."
+            f"{learned_warn}"
+        ),
         "ci_delta": 5,
     }
 

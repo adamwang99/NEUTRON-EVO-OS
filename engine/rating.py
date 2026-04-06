@@ -114,12 +114,52 @@ def record_shipment(
         return entry
 
     entry = _atomic_update(_update)
+
+    # FEEDBACK LOOP: penalize skills that contributed to a low rating.
+    # Rating 1-2 means those skills failed the user — reduce their CI.
+    if rating is not None:
+        _update_ci_from_rating(entry)
+
     return {
         "status": "recorded",
         "shipment_id": captured[0],
         "entry": entry,
         "summary": _summarize_data(_load()),
     }
+
+
+def _update_ci_from_rating(shipment: dict) -> None:
+    """
+    Feedback loop: after rating < 3, penalize skills that contributed to failure.
+    Rating 1-2 → CI drops by 3-5 per affected skill.
+    This makes CI a real quality signal, not just an activity counter.
+    """
+    rating = shipment.get("rating")
+    if rating is None or rating >= 3:
+        return
+
+    delta = -3 if rating == 2 else -5
+
+    # Map workflow step → skill name that was responsible
+    step_to_skill = {
+        "explore": "context",
+        "discovery": "discovery",
+        "spec": "spec",
+        "build": "workflow",
+        "verify": "workflow",
+        "acceptance": "acceptance_test",
+        "ship": "orchestration",
+    }
+
+    for step in shipment.get("steps_completed", []):
+        skill = step_to_skill.get(step)
+        if not skill:
+            continue
+        try:
+            from engine.expert_skill_router import update_ci
+            update_ci(skill, delta)
+        except Exception:
+            pass  # Best-effort: never block rating
 
 
 def add_rating(shipment_id: int, rating: int, notes: str = "") -> dict:
@@ -143,6 +183,11 @@ def add_rating(shipment_id: int, rating: int, notes: str = "") -> dict:
     updated = _atomic_update(_update)
     if updated is None:
         return {"status": "error", "message": f"Shipment {shipment_id} not found"}
+
+    # FEEDBACK LOOP: penalize skills if this is a late post-shipment rating
+    if rating is not None and rating < 3:
+        _update_ci_from_rating(updated)
+
     return {
         "status": "updated",
         "shipment": updated,
