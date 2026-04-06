@@ -445,23 +445,25 @@ def _step_build(task: str, context: dict) -> dict:
     """Step 4: Implement exactly what SPEC says."""
     gate = _load_gate()
 
-    if not gate.get("spec_approved"):
-        spec_path = _NEUTRON_ROOT / "SPEC.md"
-        if spec_path.exists():
-            return {
-                "status": "blocked",
-                "output": (
-                    "⛔ BUILD BLOCKED — USER REVIEW not passed.\n\n"
-                    "SPEC.md has not been approved by user.\n"
-                    "User must approve SPEC before build can begin.\n\n"
-                    "If SPEC is ready: workflow(step='spec', approved=True)\n"
-                    "To review SPEC: Read SPEC.md"
-                ),
-                "ci_delta": 0,
-            }
+    # Always check SPEC.md exists — even if spec_approved=True (gate may be stale)
+    spec_path = _NEUTRON_ROOT / "SPEC.md"
+    if not spec_path.exists():
         return {
             "status": "blocked",
             "output": "SPEC.md not found. Run /spec first.",
+            "ci_delta": 0,
+        }
+
+    if not gate.get("spec_approved"):
+        return {
+            "status": "blocked",
+            "output": (
+                "⛔ BUILD BLOCKED — USER REVIEW not passed.\n\n"
+                "SPEC.md has not been approved by user.\n"
+                "User must approve SPEC before build can begin.\n\n"
+                "If SPEC is ready: workflow(step='spec', approved=True)\n"
+                "To review SPEC: Read SPEC.md"
+            ),
             "ci_delta": 0,
         }
 
