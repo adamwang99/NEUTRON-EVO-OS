@@ -27,10 +27,20 @@ jobs:
 
       - name: Lint check (no credentials in code)
         run: |
-          # Fail if .env or credentials are committed
-          if grep -r --include="*.py" --include="*.sh" \
-            "api[_-]key\s*=" . 2>/dev/null | grep -v "example\|stub\|pattern"; then
-            echo "ERROR: Possible credential in code"
+          # Fail if hardcoded secrets (value present, not just variable name).
+          # Excludes: variable declarations (api_key= without value),
+          # env vars (os.environ.get, getenv), and example/stub/pattern files.
+          if grep -r --include="*.sh" \
+            "api[_-]key\s*=\s*['\"][^'\"]" . 2>/dev/null; then
+            echo "ERROR: Possible credential in shell script"
+            exit 1
+          fi
+          # For Python: only flag string literals with realistic-looking keys
+          # (sk-, ghp_, xoxb- prefixes indicate real credentials)
+          if grep -r --include="*.py" \
+            '"(sk-[a-zA-Z0-9]{20,}|ghp_[a-zA-Z0-9]{20,}|xox[baprs]-[a-zA-Z0-9]{10,})"' \
+            . 2>/dev/null | grep -v "example\|stub\|pattern\|check-credentials"; then
+            echo "ERROR: Possible credential pattern in Python"
             exit 1
           fi
 

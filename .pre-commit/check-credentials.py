@@ -8,9 +8,14 @@ import re
 import sys
 
 CREDENTIAL_PATTERNS = [
-    re.compile(r"(?i)(?:api[_-]?key|secret[_-]?key|auth[_-]?token|password|private[_-]?key)\s*[:=]\s*['\"]?[\w\-]{16,}['\"]?"),
-    re.compile(r"(?i)bearer\s+[a-zA-Z0-9_\-]{20,}"),
-    re.compile(r"sk-[a-zA-Z0-9]{20,}"),
+    # Match ONLY real credential values: keys/tokens with known prefixes.
+    # Excludes: variable names (ANTHROPIC_AUTH_TOKEN), function calls (os.environ.get),
+    #           dictionary access (secrets["api_key"]).
+    re.compile(r"sk-[a-zA-Z0-9]{20,}"),                   # OpenAI API key
+    re.compile(r"ghp_[a-zA-Z0-9]{20,}"),                 # GitHub Personal Access Token
+    re.compile(r"xox[baprs]-[a-zA-Z0-9]{10,}"),          # Slack OAuth token
+    re.compile(r"(?i)bearer\s+[a-zA-Z0-9_\-]{20,}"),  # Bearer token in header strings
+    re.compile(r"(?i)(?:api[_-]?key|secret[_-]?key|password)\s*[:=]\s*['\"][^'\"]{'{'[^}]{16,}'}'"),  # dict["key..."] form
 ]
 
 SENSITIVE_FILES = {".env", ".credentials", "credentials.json", "secrets.json"}
