@@ -4,6 +4,28 @@ All notable changes are documented here. The format follows [Keep a Changelog](h
 
 ---
 
+## [4.5.2] — 2026-04-06 — Adversarial Audit R2: P0 + P1 Bug Fixes
+
+### P0 Fixes
+
+- **CRITICAL: `memory._approve_pending` deadlock + lock leak** — Every early return (`target_block is None`, `filelock.Timeout`) leaked one or both of `pending_lock` + `learned_lock`. Concurrent callers would hang forever. Fixed: explicit `acquire()` before `try`, `release()` for both locks in `finally` with `RuntimeError` guard. Consistent lock-order (pending < learned) prevents deadlocks.
+- **CRITICAL: `workflow._step_verify` dead code** — `import re` was missing. The entire coverage-parsing block raised `NameError` at runtime. Fixed: `import re` added.
+
+### P1 Fixes
+
+- **CRITICAL: Discovery gate bypass** — Old DISCOVERY.md anywhere on disk caused silent auto-complete. Now scoped to matching `session.json` slug for current task. Explicit `approved=True` bypasses gate (user assumes responsibility).
+- **`acceptance_test._save_status`** — Added filelock + atomic write. Concurrent workflow + skill writes no longer lose status data.
+- **`discovery._save_session`** — Added per-session filelock + atomic write. Concurrent sessions no longer interleave.
+- **`orchestration._save_state`** — Added filelock + atomic write. Systematic fix applied to all 3 state-writing functions.
+
+### Tests
+
+- `test_workflow_spec`: updated for `"blocked"` status (discovery gate enforced, no silent bypass)
+- `test_workflow_spec_with_approval`: `approved=True` bypasses discovery gate
+- `test_dream_engine`: stale lock cleanup moved to autouse fixture (cross-test isolation)
+
+---
+
 ## [4.5.1] — 2026-04-06 — Adversarial Audit R2: HIGH/MEDIUM Hardening
 
 ### Security Hardening
