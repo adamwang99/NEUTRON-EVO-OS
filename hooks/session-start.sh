@@ -5,7 +5,12 @@
 # ─────────────────────────────────────────────────────────────────────────────
 # What it does:
 #  1. First time? → enable auto-confirm and show setup guide
-#  2. Every time? → load checkpoint, show system status
+#  2. Every time?
+#     a. GC cleanup (silent, floc)
+#     b. Dream Cycle (12h debounce, background)
+#     c. Write structured .claude/CLAUDE.md with RECALL context
+#        → Claude Code auto-loads this file → structured LEARNED/cookbook injection
+#     d. Context snapshot echo (for /compact recovery)
 # ─────────────────────────────────────────────────────────────────────────────
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -137,58 +142,79 @@ except Exception as e:
     fi
 fi
 
-# ── Load checkpoint if exists ────────────────────────────────────────────────
-# Checkpoint CLI writes to memory/YYYY-MM-DD.md as "## [HH:MM] — Task:" entries.
-# Find the most recent memory log and show the last checkpoint entry.
-LATEST_LOG=$(find "$MEMORY_DIR" -maxdepth 1 -name "[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9].md" -type f | sort -r | head -1)
-if [ -n "$LATEST_LOG" ]; then
-    LAST_CP=$(grep -A 4 "^## \[" "$LATEST_LOG" | tail -5 2>/dev/null)
-    if [ -n "$LAST_CP" ]; then
-        echo ""
-        echo "📋 Last checkpoint:"
-        echo "$LAST_CP" | sed 's/^/   /'
-    fi
-fi
+# ── Structured Context File ──────────────────────────────────────────────────
+# Write .claude/CLAUDE.md with RECALL context (LEARNED bugs + cookbook patterns).
+# Claude Code auto-loads .claude/CLAUDE.md at session start.
+# Python avoids all bash heredoc/quoting issues for multi-line content.
+CONTEXT_TMP=$(mktemp)
+cat > "$CONTEXT_TMP" <<'PYEOF'
+import os, re
+from datetime import datetime
 
-# ── Load LEARNED.md — RECALL: relevant bugs before coding ────────────────────
-# Shows last 2 structured entries (Bug: format) as structured context.
-# ~20 lines, ~400 tokens — no terminal spam.
-LEARNED="$MEMORY_DIR/LEARNED.md"
-if [ -f "$LEARNED" ]; then
-    LAST_LEARNED=$(awk '
-        /^## \[.*\] Bug: / { section=1; lines=$0; next }
-        section && /^## \[/ { section=0 }
-        section { lines = lines ORS $0 }
-        END { if (section) print lines }
-    ' "$LEARNED" 2>/dev/null | tail -2)
-    if [ -n "$LAST_LEARNED" ]; then
-        echo ""
-        echo "## RECENT BUGS (memory/LEARNED.md) — apply before coding:"
-        echo "$LAST_LEARNED"
-    fi
-fi
+nr = os.environ.get("NEUTRON_ROOT", os.getcwd())
+mem = os.path.join(nr, "memory")
+ctx = os.path.join(nr, ".claude", "CLAUDE.md")
+today = datetime.now()
+version = "v4.2.0-upgrade"
+lines = []
 
-# ── Load most recent cookbook — RECALL: actionable patterns before coding ───────
-# Shows the most recent cookbook pattern (trigger/recognition/resolution/prevention).
-# ~15 lines, ~300 tokens — no terminal spam.
-COOKBOOK_DIR="$MEMORY_DIR/cookbooks"
-if [ -d "$COOKBOOK_DIR" ]; then
-    LATEST_COOKBOOK=$(find "$COOKBOOK_DIR" -maxdepth 1 -name "*cookbook*.md" -type f 2>/dev/null | sort -r | head -1)
-    if [ -n "$LATEST_COOKBOOK" ] && [ -f "$LATEST_COOKBOOK" ]; then
-        # Extract last pattern entry (## Pattern: or ## Bug: sections)
-        LAST_PATTERN=$(awk '
-            /^## \[.*\] (Pattern:|Bug:)/ { section=1; lines=$0; next }
-            section && /^## \[/ { section=0 }
-            section { lines = lines ORS $0 }
-            END { if (section) print lines }
-        ' "$LATEST_COOKBOOK" 2>/dev/null | tail -1)
-        if [ -n "$LAST_PATTERN" ]; then
-            echo ""
-            echo "## RECENT PATTERN (memory/cookbooks/) — apply before coding:"
-            echo "$LAST_PATTERN"
-        fi
-    fi
-fi
+lines.append(f"# Session Context — NEUTRON {version} — {today.strftime('%Y-%m-%d')}")
+lines.append("")
+lines.append("## System State")
+lines.append(f"- Session: {today.strftime('%Y-%m-%d')}")
+
+# 1. Checkpoint: last task from daily log
+import glob
+logs = sorted(glob.glob(os.path.join(mem, "[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9].md")), reverse=True)
+if logs:
+    content = open(logs[0]).read()
+    m = re.search(r"^## \[.*?\] — (.+?):", content, re.MULTILINE)
+    if m:
+        lines.append(f"- Last task: {m.group(1).strip()}")
+    m2 = re.search(r"^Step: (.+)$", content, re.MULTILINE)
+    if m2:
+        lines.append(f"- Step: {m2.group(1).strip()}")
+
+lines.append("")
+lines.append("## RECALL — Apply Before Coding")
+lines.append("")
+
+# 2. LEARNED.md: last 2 bug entries
+learned = os.path.join(mem, "LEARNED.md")
+if os.path.exists(learned):
+    content = open(learned).read()
+    sections = []
+    for block in re.split(r"\n(?=## \[)", content):
+        if " Bug: " in block:
+            sections.append(block.strip())
+    if sections:
+        lines.append("### Recent Bug Fixes (memory/LEARNED.md)")
+        for s in sections[-2:]:
+            lines.append(s)
+        lines.append("")
+
+# 3. Cookbooks: most recent pattern
+cookbook_dir = os.path.join(mem, "cookbooks")
+if os.path.isdir(cookbook_dir):
+    books = sorted(glob.glob(os.path.join(cookbook_dir, "*cookbook*.md")), reverse=True)
+    if books:
+        content = open(books[0]).read()
+        sections = []
+        for block in re.split(r"\n(?=## \[)", content):
+            if "Pattern:" in block or "Bug:" in block:
+                sections.append(block.strip())
+        if sections:
+            lines.append("### Recent Pattern (memory/cookbooks/)")
+            lines.append(sections[-1])
+            lines.append("")
+
+lines.append(f"*Generated: {today.strftime('%Y-%m-%d %H:%M')}*")
+
+os.makedirs(os.path.dirname(ctx), exist_ok=True)
+with open(ctx, "w") as f:
+    f.write("\n".join(lines) + "\n")
+PYEOF
+python3 "$CONTEXT_TMP" && rm -f "$CONTEXT_TMP"
 
 # ── Context Snapshot (recovery after /compact) ─────────────────────────────
 # After context compaction, the next session sees what was in progress.

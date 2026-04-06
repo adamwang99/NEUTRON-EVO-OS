@@ -23,17 +23,19 @@ Recent entries shown at session start. Apply them before coding.
 
 | Skill | Trigger keywords |
 |-------|-----------------|
-| context | context, compact, CLAUDE.md, ide window |
-| memory | memory, log, archive, search, recall, cookbook |
-| workflow | workflow, /explore, /spec, /build, /ship, 5-step |
-| engine | engine, router, CI, audit, observer, health |
-| checkpoint | checkpoint, handoff, resume |
-| discovery | discovery, interview, requirements |
-| acceptance_test | acceptance, test, verify, user test |
+| context | context, compact, CLAUDE.md, ide window, token overhead |
+| memory | memory, archive, search, recall, cookbook, distill, shipment |
+| workflow | workflow, implement, spec, specification, user story, acceptance criteria |
+| engine | engine, router, CI, audit, observer, health, status, stats |
+| checkpoint | checkpoint, handoff, resume, save progress, interrupt |
+| discovery | discovery, interview, requirements, clarify, ask questions |
+| acceptance_test | acceptance, test, verify, pytest, coverage, unit test |
 | spec | spec, debate, adversarial |
-| orchestration | orchestrate, parallel, multi-agent |
+| orchestration | orchestrate, parallel, multi-agent, swarm, concurrent, worktree |
 | feature_library | auth, JWT, REST, database, API |
 | ui_library | UI, frontend, shadcn, Ant Design |
+
+**Catch-all:** bug, fix, error, crash, debug, refactor → routes to workflow
 
 ## Quick Commands
 
@@ -45,10 +47,13 @@ neutron auto full       # skip all gates
 neutron gc              # garbage collection
 ```
 
-## CI Scoring
+## CI Scoring (Live — PERFORMANCE_LEDGER.md)
 
-- CI ≥ 70: full trust (auto-route)
-- CI ≥ 40: normal
-- CI < 30: blocked (human review required)
+| CI Range | Status | Behavior |
+|----------|--------|---------|
+| 70-100 | Trusted | Auto-confirm enabled |
+| 40-69 | Normal | Standard operation |
+| 20-29 | Restricted | Warning, still runs |
+| 0-19 | Rehabilitation | Confidence ×0.7, still runs |
 
-**Low rating (1-2) at `/ship` penalizes the skills used → CI drops.**
+**Rating → CI:** 5→+5 | 4→+3 | 3→0 | 2→-3 | 1→-5

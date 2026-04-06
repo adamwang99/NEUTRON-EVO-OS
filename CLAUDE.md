@@ -34,23 +34,12 @@ See `NEUTRON_CONTEXT.md` for the full system context.
 - Swarm agents: `spawn_parallel(unit_configs)` in `mcp_server/tools.py` — true N-agent parallel
 - Distill: ship step writes `memory/pending/LEARNED_pending.md` for review
 
-## CI Thresholds (live)
+## Known Issues
 
-| CI Range | Status | Behavior |
-|----------|--------|----------|
-| 70-100 | Trusted | Auto-confirm enabled |
-| 40-69 | Normal | Standard operation |
-| 20-29 | Restricted | Warning, still runs |
-| 0-19 | Rehabilitation | Confidence ×0.7, still runs |
-
-Rating: 5→+5 CI, 4→+3 CI, 3→0, 2→-3 CI, 1→-5 CI. Skills: `PERFORMANCE_LEDGER.md`.
-
-## Known Issues & Guards
-
-- **Dream Cycle AI**: Requires `ANTHROPIC_API_KEY` env var (Anthropic format, not OpenAI sk-). Non-AI phases (archive, prune, distill) work without it.
+- **Dream Cycle AI**: Requires `ANTHROPIC_API_KEY` env var (Anthropic format). Non-AI phases work without it.
 - **Directory boundary**: Observer and GC scoped to project root only.
 - **PreLoadMemory**: Not a valid hook. Use SessionStart instead.
-- Legacy docs archived to `memory/archived/` (CHANGELOG, SYSTEM_REVIEW, ARCHITECTURE, WORKFLOW_MEMORY).
+- Legacy docs archived to `memory/archived/`.
 
 ## Forbidden
 
