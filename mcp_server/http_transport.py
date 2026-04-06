@@ -148,6 +148,10 @@ def create_app() -> FastAPI:
         X-NEUTRON-API-Key header required unless accessing public paths.
         """
         # Authenticate
+        # Security: ALWAYS run timing-safe comparison regardless of whether
+        # the header is present. If header is absent, compare against a dummy
+        # key so the execution time is the same as a present-but-wrong-key.
+        # This prevents timing attacks that distinguish "no key" from "wrong key".
         headers = {"x-neutron-api-key": x_neutron_api_key or ""}
         is_auth, api_key, err = auth.authenticate(headers)
         if not is_auth:

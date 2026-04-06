@@ -17,6 +17,29 @@ from typing import Optional
 NEUTRON_ROOT = Path(os.environ.get("NEUTRON_ROOT", Path(__file__).parent.parent))
 MEMORY_DIR = NEUTRON_ROOT / "memory"
 CHECKPOINT_SCRIPT = NEUTRON_ROOT / "skills" / "core" / "checkpoint" / "SKILL.md"
+_CHECKPOINT_LOCK = MEMORY_DIR / ".checkpoint.lock"
+
+
+def _write_atomic(path: Path, content: str):
+    """Filelock + atomic write: prevents concurrent writes from corrupting checkpoint."""
+    import filelock, tempfile, os as _os
+    lock = filelock.FileLock(str(_CHECKPOINT_LOCK), timeout=10)
+    with lock:
+        fd = tempfile.NamedTemporaryFile(
+            mode="w", dir=path.parent, delete=False, encoding="utf-8"
+        )
+        try:
+            fd.write(content)
+            fd.flush()
+            _os.fsync(fd.fileno())
+            fd.close()
+            _os.replace(fd.name, str(path))
+        except Exception:
+            try:
+                _os.unlink(fd.name)
+            except Exception:
+                pass
+            raise
 
 # PII scrubbing patterns — ORDER MATTERS (specific first, general last)
 _PII_PATTERNS = [
@@ -152,7 +175,8 @@ def write_checkpoint(
 """
         new_content += checkpoint_entry
 
-    checkpoint_path.write_text(new_content)
+    # Atomic write under filelock — prevents concurrent writes from interleaving
+    _write_atomic(checkpoint_path, new_content)
 
     return {
         "status": "saved",

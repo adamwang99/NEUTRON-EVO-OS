@@ -8,11 +8,14 @@ from __future__ import annotations
 import json
 import secrets
 import os
+import tempfile
 from pathlib import Path
 from datetime import datetime
+from filelock import FileLock
 
 _NEUTRON_ROOT = Path(os.environ.get("NEUTRON_ROOT", str(Path(__file__).parent.parent)))
 _CONFIG_FILE = _NEUTRON_ROOT / "memory" / ".mcp_config.json"
+_CONFIG_LOCK = _CONFIG_FILE.with_suffix(".lock")
 
 
 def _load() -> dict:
@@ -34,9 +37,25 @@ def _load() -> dict:
 
 
 def _save(cfg: dict):
-    """Save MCP config atomically."""
+    """Save MCP config with filelock + atomic write (process-safe)."""
     _CONFIG_FILE.parent.mkdir(exist_ok=True)
-    _CONFIG_FILE.write_text(json.dumps(cfg, indent=2, ensure_ascii=False))
+    lock = FileLock(str(_CONFIG_LOCK), timeout=10)
+    with lock:
+        fd = tempfile.NamedTemporaryFile(
+            mode="w", dir=_CONFIG_FILE.parent, delete=False, encoding="utf-8"
+        )
+        try:
+            fd.write(json.dumps(cfg, indent=2, ensure_ascii=False))
+            fd.flush()
+            os.fsync(fd.fileno())
+            fd.close()
+            os.replace(fd.name, str(_CONFIG_FILE))
+        except Exception:
+            try:
+                os.unlink(fd.name)
+            except Exception:
+                pass
+            raise
 
 
 def _default_config() -> dict:

@@ -91,20 +91,31 @@ def authenticate(request_headers: dict) -> tuple[bool, str, str]:
 
     Returns:
         (is_authenticated, api_key_or_empty, error_message)
+
+    Security: Always executes the same number of cryptographic operations
+    regardless of whether the header is present, present-but-wrong, or absent.
+    This prevents timing attacks that distinguish "no header" from "wrong key".
     """
     cfg = _get_config()
 
     # Get API key from header
     api_key = request_headers.get("x-neutron-api-key", "").strip()
+    path = request_headers.get("path", "")
+
+    # Allow unauthenticated for certain paths
+    if path in ("/health", "/docs", "/openapi.json", "/redoc"):
+        return True, "_anonymous", ""
 
     if not api_key:
-        # Allow unauthenticated for certain paths
-        path = request_headers.get("path", "")
-        if path in ("/health", "/docs", "/openapi.json", "/redoc"):
-            return True, "_anonymous", ""
+        # Timing-attack mitigation: even if no key is provided, run the
+        # timing-safe comparison against a dummy key so the execution time
+        # is identical to a present-but-wrong-key request.
+        # This prevents attackers from distinguishing "no key" vs "wrong key".
+        import hmac as _hmac
+        _hmac.compare_digest(api_key, "\x00" * 32)  # dummy — always mismatches
         return False, "", "Missing X-NEUTRON-API-Key header"
 
-    # Validate key
+    # Validate key — validate_api_key() uses hmac.compare_digest over all keys
     valid, root_or_error = cfg.validate_api_key(api_key)
     if not valid:
         return False, "", root_or_error

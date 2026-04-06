@@ -114,7 +114,17 @@ def _archive_file(context: dict) -> dict:
     file_path = context.get("file_path")
     if not file_path:
         return {"status": "error", "output": "file_path required in context", "ci_delta": 0}
-    p = Path(file_path)
+    p = Path(file_path).resolve()
+    # Security: validate path is inside NEUTRON_ROOT to prevent path traversal
+    # (e.g., archiving ../../../etc/passwd into memory/archived/)
+    try:
+        p.relative_to(_NEUTRON_ROOT)
+    except ValueError:
+        return {
+            "status": "error",
+            "output": f"Path {file_path} is outside NEUTRON_ROOT — archiving external paths is not allowed",
+            "ci_delta": -5,
+        }
     if not p.exists():
         return {"status": "error", "output": f"Not found: {file_path}", "ci_delta": 0}
     ARCHIVED_DIR.mkdir(exist_ok=True)

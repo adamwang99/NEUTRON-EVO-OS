@@ -316,7 +316,11 @@ def _write_execution_log(skill_name: str, task: str, result: dict):
                     pass
                 raise
     except Timeout:
-        pass  # Best-effort: log append is supplementary
+        import logging as _log
+        _log.getLogger("neutron-evo-os.skill-log").warning(
+            f"Log append timeout for {log_path.name} — skill execution not recorded. "
+            "If this recurs, the daily log may be heavily contended."
+        )
 
 
 def _trigger_dream_archive(log_path: Path, today: str, new_content: str, max_lines: int):
