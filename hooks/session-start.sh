@@ -129,6 +129,28 @@ if [ -f "$LEARNED" ]; then
     fi
 fi
 
+# ── Load most recent cookbook — RECALL: actionable patterns before coding ───────
+# Shows the most recent cookbook pattern (trigger/recognition/resolution/prevention).
+# ~15 lines, ~300 tokens — no terminal spam.
+COOKBOOK_DIR="$MEMORY_DIR/cookbooks"
+if [ -d "$COOKBOOK_DIR" ]; then
+    LATEST_COOKBOOK=$(find "$COOKBOOK_DIR" -maxdepth 1 -name "*cookbook*.md" -type f 2>/dev/null | sort -r | head -1)
+    if [ -n "$LATEST_COOKBOOK" ] && [ -f "$LATEST_COOKBOOK" ]; then
+        # Extract last pattern entry (## Pattern: or ## Bug: sections)
+        LAST_PATTERN=$(awk '
+            /^## \[.*\] (Pattern:|Bug:)/ { section=1; lines=$0; next }
+            section && /^## \[/ { section=0 }
+            section { lines = lines ORS $0 }
+            END { if (section) print lines }
+        ' "$LATEST_COOKBOOK" 2>/dev/null | tail -1)
+        if [ -n "$LAST_PATTERN" ]; then
+            echo ""
+            echo "## RECENT PATTERN (memory/cookbooks/) — apply before coding:"
+            echo "$LAST_PATTERN"
+        fi
+    fi
+fi
+
 # ── Context Snapshot (recovery after /compact) ─────────────────────────────
 # After context compaction, the next session sees what was in progress.
 # neutron snapshot saves state on every skill execution automatically.

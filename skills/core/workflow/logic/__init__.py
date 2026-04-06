@@ -183,7 +183,12 @@ def _step_explore(task: str, context: dict) -> dict:
 
     # Reset gate state for new workflow
     gate = _load_gate()
-    gate.update({"spec_approved": False, "acceptance_passed": False, "current_step": "explore"})
+    gate.update({
+        "spec_approved": False,
+        "acceptance_passed": False,
+        "current_step": "explore",
+        "session_started_at": datetime.now().isoformat(),  # for time-to-ship measurement
+    })
     _save_gate(gate)
 
     _log_milestone("explore", task, "System healthy, ready to explore", ci_delta=5)
@@ -512,6 +517,29 @@ def _step_build(task: str, context: dict) -> dict:
             + "\n".join(f"   {e}" for e in learned["entries"][:3])
         )
 
+    # SPEC completeness guard: block build if SPEC has placeholder stubs.
+    # If SPEC contains _TBD_ or _ Not specified_ patterns, it was never hardened.
+    spec_content = spec_path.read_text(errors="ignore")
+    tbd_lines = [
+        line.strip() for line in spec_content.splitlines()
+        if "_TBD_" in line or "_Not specified_" in line
+        or "_USER REVIEW" in line or "_For USER REVIEW" in line
+    ]
+    if tbd_lines:
+        return {
+            "status": "blocked",
+            "output": (
+                f"⛔ BUILD BLOCKED — SPEC.md is incomplete.\n\n"
+                f"Found {len(tbd_lines)} incomplete section(s):\n"
+                + "\n".join(f"   {l[:80]}" for l in tbd_lines[:5])
+                + f"\n\nSPEC has not been hardened through debate rounds.\n"
+                "Run: workflow(step='spec') — answer debate questions to harden SPEC.\n"
+                "Then: workflow(step='spec', approved=True) to approve.\n"
+            ),
+            "ci_delta": 0,
+            "incomplete_sections": tbd_lines[:5],
+        }
+
     # Anti-slop check
     output = context.get("output", "")
     slop_signals = ["as per your request", "simply", "just", "of course", "here is the"]
@@ -719,11 +747,25 @@ def _step_ship(task: str, context: dict) -> dict:
 
     # Record the shipment BEFORE rating so we have a shipment_id to attach rating to
     from engine.rating import record_shipment
+
+    # Calculate time-to-ship from session start
+    started_at = gate.get("session_started_at")
+    if started_at:
+        try:
+            elapsed_seconds = (
+                datetime.now() - datetime.fromisoformat(started_at)
+            ).total_seconds()
+        except Exception:
+            elapsed_seconds = 0.0
+    else:
+        elapsed_seconds = 0.0
+
     shipment_result = record_shipment(
         project=task,
         complexity="MEDIUM",
         steps_completed=["explore", "discovery", "spec", "build", "acceptance"],
         outcome="shipped",
+        time_to_ship_minutes=round(elapsed_seconds / 60, 1),
     )
     shipment_id = shipment_result.get("shipment_id")
 
@@ -747,6 +789,24 @@ def _step_ship(task: str, context: dict) -> dict:
     _save_gate(gate)
 
     _log_milestone("ship", task, "Delivered and archived", ci_delta=15)
+
+    # ── Self-evolution: distill patterns from session into learned skills ─────────
+    # Run pattern distillation asynchronously — do NOT block delivery on this.
+    # distill_patterns() scans session logs for recurring patterns and registers
+    # learned skills that auto-match on next similar task.
+    _distill_async = context.get("_distill_async", True)
+    if _distill_async:
+        try:
+            import threading as _t, sys as _sys
+            def _distill():
+                try:
+                    from engine.learned_skill_builder import distill_patterns
+                    distill_patterns(min_frequency=2)
+                except Exception as _e:
+                    print(f"[WORKFLOW] distill_patterns failed: {_e}", file=_sys.stderr)
+            _t.Thread(target=_distill, daemon=True).start()
+        except Exception:
+            pass  # best-effort
 
     # User rating prompt (always shown unless already provided)
     if rating:

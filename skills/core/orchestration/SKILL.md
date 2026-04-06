@@ -1,19 +1,19 @@
 ---
 name: orchestration
 type: core
-version: 2.0.0
+version: 2.1.0
 CI: 50
 dependencies: [workflow, context, memory]
 last_dream: null
 ---
 
-## Orchestration Skill — Multi-Agent Parallel Task Distribution
+## Orchestration Skill — Task Decomposition + Parallel Coordination
 
 ### Purpose
 
-When a task is large enough to benefit from parallel execution, this skill orchestrates
-multiple specialized agents working simultaneously — each agent handles a distinct unit
-of work, results are aggregated and validated, and the final deliverable is assembled.
+This skill decomposes large tasks into independent units and coordinates parallel execution.
+It is a **PLANNING + COORDINATION tool** — it does NOT spawn agents directly.
+Agents are spawned via Claude Code's built-in `/batch` command (git worktree-based parallel).
 
 **This skill answers**: "How do I split this work? Which agents do what?
 How do I make sure they don't conflict? How do I merge their outputs?"
@@ -27,15 +27,22 @@ How do I make sure they don't conflict? How do I merge their outputs?"
 ```
 run_orchestration(task, {"phase": "analyze"})   → Decompose task, score parallelism
 run_orchestration(task, {"phase": "plan"})     → Present plan (after analyze)
-run_orchestration(task, {"phase": "execute"})  → Build Agent configs, you call Agent tool
-run_orchestration(task, {"phase": "update", "unit_id": "...", "result": {...}})  → Record agent result
+run_orchestration(task, {"phase": "execute"})  → Build unit configs → use /batch to spawn
+run_orchestration(task, {"phase": "update", "unit_id": "...", "result": {...}})  → Record unit result
 run_orchestration(task, {"phase": "merge"})    → Validate + merge results
 run_orchestration(task, {"phase": "report"})    → Final summary
 ```
 
-### Execute Phase — Real Agent Spawning
+### Execute Phase — /batch Spawning
 
-The `execute` phase returns a list of `Agent(...)` configs. You must call them:
+The `execute` phase returns unit configs. Use `/batch` to spawn agents in parallel:
+
+```
+1. After run_orchestration(..., phase="execute"):
+2. Each unit is a /batch command — copy the instruction block
+3. Run multiple /batch in parallel (Claude Code's worktree isolation prevents conflicts)
+4. When all /batch complete, call run_orchestration(..., phase="merge")
+```
 
 ```python
 # After run_orchestration(..., phase="execute"):
@@ -150,23 +157,17 @@ Present a structured plan to the user:
 Proceed? (YES / Modify plan / CANCEL)
 ```
 
-### Phase 4: Spawn Agents in Parallel
+### Phase 4: Spawn /batch for Each Unit
 
-**For each unit, spawn an agent with:**
-1. Clear scope description
-2. Required context (relevant files, existing code)
-3. Output format specification
-4. Error handling instructions
-5. What to do when done
+**For each unit, run `/batch` with the unit config:**
+1. Copy the unit instruction from the `execute` phase output
+2. Run multiple `/batch` in parallel (git worktree isolation prevents conflicts)
+3. Track progress with `phase='update', unit_id='...', result={...}`
+4. After all complete, call `phase='merge'`
 
-**Spawn command pattern:**
+**/batch command pattern:**
 ```
-Agent[unit-N]:
-  Type: [Explore | Plan | general-purpose]
-  Context: [Required context files]
-  Task: [Specific task]
-  Output: [What to produce]
-  On error: [What to do]
+/batch <unit-specific instruction from execute phase>
 ```
 
 ### Phase 5: Progress Tracking
@@ -229,51 +230,40 @@ Present unified results:
 
 ---
 
-## How Orchestration Works vs Claude Code's `/batch`
+## How Orchestration Works with Claude Code
 
-**Orchestration handles two scenarios:**
-
-### Scenario A: Orchestration Skill → Agent Tool (v2+)
-
-Orchestration builds `Agent(...)` configs and stores them in state.
-The orchestrating AI calls them directly:
+Orchestration is a **phase-based planning skill**. The `execute` phase outputs
+unit configs that YOU use with `/batch`:
 
 ```
-1. run_orchestration(phase='analyze')   → Decompose task
-2. run_orchestration(phase='plan')       → Review plan, confirm
-3. run_orchestration(phase='execute')    → Build Agent configs
-4. Agent(...) for each config            ← REAL agents spawn via Agent tool
-5. run_orchestration(phase='merge')      → Validate and merge
-```
-
-### Scenario B: Orchestration → /batch (git worktree parallel)
-
-Orchestration handles decomposition + conflict prevention;
-Claude Code's `/batch` skill handles parallel execution via git worktrees:
-
-```
-1. run_orchestration(phase='analyze')  → Get unit decomposition
-2. run_orchestration(phase='plan')      → Review the plan, confirm structure
-3. /batch <instruction>                 → Claude Code spawns parallel git worktrees
-4. run_orchestration(phase='merge')     → Validate and merge outputs
+1. run_orchestration(phase='analyze')  → Decompose task into units
+2. run_orchestration(phase='plan')      → Review decomposition, confirm
+3. run_orchestration(phase='execute')   → Get unit configs
+4. /batch <unit-1-instruction>          ← Spawn parallel agents
+   /batch <unit-2-instruction>          ← (git worktree isolation)
+   /batch <unit-3-instruction>
+5. run_orchestration(phase='merge')      → Validate + merge results
 ```
 
 ---
 
-## Agent Tool Parameters
+## /batch Command Reference
 
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `prompt` | string | Full task description for the agent |
-| `agent` | string | "Explore" (read-only), "Plan" (read+write), "general-purpose" |
-| `background` | bool | True = concurrent; False = blocking |
-| `maxTurns` | int | Max turns before stopping (default 50) |
-| `isolation` | string | Project root → runs in temporary git worktree |
-| `skills` | list[str] | Skills to preload ("spec", "context") |
+Claude Code's `/batch` command spawns parallel agents using git worktrees:
 
-**`isolation: worktree`** — recommended for all units. The agent works on an
-isolated git branch. If no changes made, the worktree is auto-cleaned.
-This is the safest way to prevent file conflicts between parallel agents.
+```
+/batch <instruction per unit>  → spawns agent in isolated worktree
+```
+
+Each worktree is an isolated git branch. No file conflicts between agents.
+Worktrees are auto-cleaned when done.
+
+**Unit config from `execute` phase** tells you what to pass to each `/batch`:
+- `unit_id`: identifier for tracking
+- `unit_name`: display name
+- `prompt`: what to do
+- `estimated_minutes`: expected duration
+- `scope`: what files this unit owns
 
 ---
 
