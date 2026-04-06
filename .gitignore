@@ -86,3 +86,4 @@ memory/discoveries/
 # npm garbage
 =npm-debug.log*
 =*
+memory/.workflow_gate.json

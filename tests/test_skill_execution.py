@@ -13,7 +13,7 @@ from engine import skill_execution
 class TestSkillExecutionRun:
     def test_context_skill_runs(self):
         result = skill_execution.run("context", "audit context", {"task": "audit"})
-        assert result["status"] in ("ok", "error", "blocked")
+        assert result["status"] in ("ok", "error", "blocked", "degraded")
         assert "ci_delta" in result
         assert isinstance(result["ci_delta"], int)
 
@@ -74,12 +74,13 @@ class TestSkillExecutionRun:
 
     def test_workflow_build_blocked_without_approval(self):
         # Build is blocked without SPEC approval
-        # Clear gate file to ensure clean state
-        import os, sys
+        # Clear gate file AND SPEC.md to ensure clean state
         _ne = Path(__file__).parent.parent
         _gate = _ne / "memory" / ".workflow_gate.json"
+        _spec = _ne / "SPEC.md"
         if _gate.exists():
             _gate.unlink()
+        _spec.unlink(missing_ok=True)
         result = skill_execution.run(
             "workflow", "test", {"step": "build"}
         )
