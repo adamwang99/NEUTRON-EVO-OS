@@ -297,3 +297,34 @@ When you fix a bug or discover a pattern:
 - **Tags:** #hook #enforcement
 - **Lesson:** Warning-only hooks are not enforcement. If a rule exists, it must block.
 
+
+---
+
+## [2026-04-08] Bug: Shipments & Decisions tracking never activated
+
+- **Symptom:** `memory/shipments.json` and `memory/user_decisions.json` were empty
+  (117 decisions but no user decisions, 2 shipments but no shipments records).
+  `record_shipment()` existed in `_step_ship()` but no workflow ever ran through
+  `/ship`. `user_decisions.record()` existed but was never called anywhere.
+- **Root cause:** Two-part failure:
+  1. Shipments: `_step_ship()` called `record_shipment()` correctly, but the
+     complete workflow (`/explore → /discovery → /spec → /build → /acceptance → /ship`)
+     was never run end-to-end. Shipments existed in one-off test calls only.
+  2. Decisions: `user_decisions.py` was a complete, well-written module but
+     was never imported or called from any skill or workflow step. RULE 3
+     specified the requirement but no code implemented it.
+- **Fix:**
+  - `skills/core/workflow/logic/__init__.py`: Added `_record_decision()` helper
+    that calls `user_decisions.record()` with best-effort error handling.
+    Called automatically in:
+    - `_step_discovery()` (auto-confirm path): "Discovery auto-confirmed"
+    - `_record_spec_approval()`: "SPEC approved" / "SPEC changes requested"
+    - `_step_ship()`: "Project shipped"
+  - `hooks/gc_lightweight.py`: `MAX_ARCHIVED=500` → 100, added compression of
+    old files (files older than 3 days → tar.gz). Archived/ shrunk from
+    500 files (3.2MB) to 24 files + 1 tar.gz (72KB) — 98% reduction.
+- **Tags:** `#workflow` `#memory` `#data-integrity` `#rule-3`
+- **Lesson:** Module existence ≠ feature activation. A well-written module that
+  is never called is the same as no module. Every CLAUDE.md RULE must have
+  implementation code that enforces it, not just documentation.
+

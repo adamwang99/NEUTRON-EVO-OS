@@ -244,6 +244,12 @@ def _step_discovery(task: str, context: dict) -> dict:
     if _auto_confirm_check("discovery"):
         gate["discovery_complete"] = True
         _save_gate(gate)
+        _record_decision(
+            decision="Discovery auto-confirmed (auto-confirm mode enabled)",
+            context=f"Task: {task[:80]}",
+            project="NEUTRON-EVO-OS",
+            outcome="accepted",
+        )
         auto = _auto_record("discovery")
         _log_milestone("discovery", task, "AUTO-CONFIRMED (skipped interview)", ci_delta=0)
         return {
@@ -345,6 +351,13 @@ def _step_spec(task: str, context: dict) -> dict:
             }
         return _record_spec_approval(True, context)
     elif context.get("approved") is False:
+        # ── Record USER DECISION: SPEC abandoned ────────────────────────────
+        _record_decision(
+            decision="SPEC abandoned before build",
+            context=f"Task: {context.get('task', task[:80])}",
+            project="NEUTRON-EVO-OS",
+            outcome="rejected",
+        )
         return _record_spec_approval(False, context)
 
     # Handle revision (user requested changes to SPEC)
@@ -449,6 +462,18 @@ def _step_spec(task: str, context: dict) -> dict:
     }
 
 
+def _record_decision(decision: str, context: str = "", project: str = "", outcome: str = "pending") -> None:
+    """
+    Record a user decision to memory/user_decisions.json.
+    Best-effort — never blocks workflow on failure.
+    """
+    try:
+        from engine.user_decisions import record as record_decision_fn
+        record_decision_fn(decision=decision, context=context, project=project, outcome=outcome)
+    except Exception:
+        pass  # Best-effort: never block delivery on decision write failure
+
+
 def _record_spec_approval(approved: bool, context: dict) -> dict:
     """Record user's SPEC approval decision."""
     gate = _load_gate()
@@ -457,7 +482,15 @@ def _record_spec_approval(approved: bool, context: dict) -> dict:
     gate["spec_approver_notes"] = context.get("notes", "")
     _save_gate(gate)
 
+    # ── Record USER DECISION: SPEC approved / changes requested ─────────────
+    task = context.get("task", "unknown")
     if approved:
+        _record_decision(
+            decision="SPEC approved for build",
+            context=f"Task: {task[:80]} | Notes: {context.get('notes', 'none')}",
+            project="NEUTRON-EVO-OS",
+            outcome="accepted",
+        )
         _log_milestone("spec", "SPEC approved by user", f"Build UNLOCKED — {context.get('notes', '')}", ci_delta=5)
         return {
             "status": "spec_approved",
@@ -469,6 +502,12 @@ def _record_spec_approval(approved: bool, context: dict) -> dict:
             "ci_delta": 5,
         }
     else:
+        _record_decision(
+            decision="SPEC changes requested",
+            context=f"Task: {task[:80]} | Changes: {context.get('notes', 'none')}",
+            project="NEUTRON-EVO-OS",
+            outcome="pending",
+        )
         return {
             "status": "spec_changes_requested",
             "output": (
@@ -780,6 +819,18 @@ def _step_ship(task: str, context: dict) -> dict:
 
     # Present delivery summary
     summary = context.get("delivery_summary", f"Completed: {task}")
+
+    # ── Record USER DECISION: Project shipped ─────────────────────────────────
+    _record_decision(
+        decision=f"Project shipped: {task[:80]}",
+        context=(
+            f"Steps: {', '.join(['explore', 'discovery', 'spec', 'build', 'acceptance'])} | "
+            f"Outcome: shipped | Time: {round(elapsed_seconds/60, 1)}min | "
+            f"Spec archived: {archived_spec is not None}"
+        ),
+        project="NEUTRON-EVO-OS",
+        outcome="accepted",
+    )
 
     # Record the shipment BEFORE rating so we have a shipment_id to attach rating to
     from engine.rating import record_shipment

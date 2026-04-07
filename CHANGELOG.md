@@ -4,6 +4,30 @@ All notable changes are documented here. The format follows [Keep a Changelog](h
 
 ---
 
+## [4.5.3] — 2026-04-08 — Audit Fixes: Decisions + Archive Policy
+
+### P0 — Shipments & Decisions Recording
+
+- **`workflow/logic/__init__.py`**: Added `_record_decision()` helper that calls
+  `user_decisions.record()` with best-effort error handling. Integrated into:
+  - `_step_discovery()` (auto-confirm path): records "Discovery auto-confirmed"
+  - `_record_spec_approval()`: records "SPEC approved" or "SPEC changes requested"
+  - `_step_ship()`: records "Project shipped" with full context
+- **`hooks/gc_lightweight.py`**: `MAX_ARCHIVED=500` → 100 hard cap; added
+  compression of files older than 3 days into `YYYY-MM-DD_session_archive.tar.gz`.
+  Archived/ shrunk from 500 files (3.2MB) to 24 files + 1 tar.gz (72KB) — **98% reduction**.
+
+### Housekeeping
+
+- `skills/core/workflow/logic/__init__.py`: Added `task` key to `_record_spec_approval()`
+  context dict so decisions capture the actual task name
+- `memory/LEARNED.md`: Added entry for audit-bug discovery (shipments+decisions
+  module existed but were never called)
+- `memory/shipments.json`: Recorded audit fix session as first proper shipment
+- `memory/user_decisions.json`: Recorded audit decisions (SPEC approved, shipped)
+
+---
+
 ## [4.5.2] — 2026-04-06 — Adversarial Audit R2: P0 + P1 Bug Fixes
 
 ### P0 Fixes
@@ -137,7 +161,32 @@ All notable changes are documented here. The format follows [Keep a Changelog](h
 
 ---
 
-## [4.3.2] — 2026-04-01 — Garbage Collection + Session-Start Fix
+## [4.3.2] — 2026-04-07 — Security Audit Fixes v2 + Version Bump
+
+### Security Fixes
+
+- **mcp_server/auth.py** — Added `threading.Lock` around `_rate_buckets` dict + eviction counter to prevent race conditions in multi-threaded FastAPI contexts
+- **mcp_server/http_transport.py** — Fixed 3 security bugs: (1) JSON-RPC id now validates str/int/None only (rejects float/bool), (2) Internal errors return sanitized message (no `{e}` disclosure), (3) Unauthorized batch returns "Unauthorized" not raw `err`
+- **mcp_server/tools.py** — `cwd` for `neutron_spawn_agent` now validated to be inside NEUTRON_ROOT (prevents path traversal)
+- **engine/regression_guard.py** — Guard log now uses `atomic_write()` instead of bare `.write_text()`
+- **hooks/session-end.sh** — (1) Replaced GNU `date -d` with portable Python mtime reading, (2) Replaced shell-injectable `bash -c "python3 ... '$NEUTRON_HUB'"` with safe Python subprocess call
+- **hooks/gc_lightweight.py** — Fixed `ValueError` escaping the loop (malformed date lines no longer drop all subsequent entries)
+- **hooks/auto-sync.sh** — Fixed `{BASH_SOURCE[0]}` typo (was `{{BASH_SOURCE[0]}}` in embedded heredoc)
+- **engine/platform_sync.py** — Fixed same `{BASH_SOURCE[0]}` typo in embedded shell script
+- **engine/compact_wrapper.sh** — Replaced hardcoded `/mnt/data/projects/ai-context-master` with portable auto-detection from script location
+
+### Other Fixes
+
+- **install.sh** — (1) Fixed GitHub URL from `your-username` to `adamwang99/NEUTRON-EVO-OS`, (2) MCP server config now uses `.setdefault().update()` merge instead of unconditional overwrite (preserves existing mcpServers)
+- **hooks/session-start.sh** — Fixed inverted epoch check (`-n` → `-z`) that caused Dream Cycle to fire on every session regardless of 12h debounce
+
+### Version Bump
+
+- All version strings updated to **v4.3.2** across engine/__init__.py, mcp_server/__init__.py, http_transport.py, transport.py, vscode-extension/, install.sh, install-global.sh, Makefile, hooks/session-start.sh, compact_wrapper.sh
+
+---
+
+## [4.3.1] — 2026-04-01 — Audit Fixes + UI Library + CLI Upgrade
 
 ### New Features
 
