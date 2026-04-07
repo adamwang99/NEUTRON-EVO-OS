@@ -64,18 +64,18 @@ MAX_PENDING_AGE_DAYS = 7    # auto-archive pending entries older than this
 
 # Re-entrancy guard: prevents concurrent dream cycles.
 # Uses a filelock file instead of threading.Event so it works ACROSS PROCESSES.
-# Lock path is re-resolved each call so monkeypatch can override MEMORY_DIR in tests.
+# FileLock instance is created ONCE so is_locked accurately reflects lock state.
+# Path is resolved once at module level — override MEMORY_DIR before import in tests.
 _DREAM_LOCK_CACHE: filelock.FileLock | None = None
 
 
 def _get_dream_lock() -> "filelock.FileLock":
     """Get or create the dream cycle filelock (process-safe, respects MEMORY_DIR at call time)."""
     global _DREAM_LOCK_CACHE
-    import filelock as _filelock
-    # Always re-resolve path so monkeypatch can override MEMORY_DIR in tests
-    lock_path = str(MEMORY_DIR / ".dream.lock")
-    # Create fresh FileLock each call — path resolution is fast, avoids stale caches
-    _DREAM_LOCK_CACHE = _filelock.FileLock(lock_path, timeout=5)
+    if _DREAM_LOCK_CACHE is None:
+        import filelock as _filelock
+        lock_path = str(MEMORY_DIR / ".dream.lock")
+        _DREAM_LOCK_CACHE = _filelock.FileLock(lock_path, timeout=5)
     return _DREAM_LOCK_CACHE
 
 # Sentinel file — if this file exists, observer should NOT restart dream cycle

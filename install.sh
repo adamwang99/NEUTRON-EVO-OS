@@ -240,29 +240,39 @@ else:
 if "hooks" not in settings:
     settings["hooks"] = {}
 
+# Append NEUTRON hooks WITHOUT overwriting existing hooks from other tools.
+# Duplicate detection: skip if "command" path already present in any existing entry.
+def _add_hook_if_missing(hook_name, new_entry):
+    settings["hooks"].setdefault(hook_name, [])
+    existing_cmds = {
+        h.get("command", "")
+        for entry in settings["hooks"].get(hook_name, [])
+        for h in entry.get("hooks", [])
+    }
+    if new_entry["hooks"][0]["command"] not in existing_cmds:
+        settings["hooks"][hook_name].append(new_entry)
+
 # SessionStart hook — runs on every Claude Code session start
-# Format: { "matcher": "", "hooks": [{ "type": "command", "command": "/full/path", "args": [] }] }
-# IMPORTANT: "command" must be the full path to the script, NOT "bash" with script in args.
-# Using bash + script-path-in-args causes "SessionStart: startup hook error".
-settings["hooks"]["SessionStart"] = [{
+# IMPORTANT: "command" must be the full script path, NOT "bash" with script in args.
+# Using bash + script-in-args causes "SessionStart: startup hook error" in Claude Code v2.1.92.
+_add_hook_if_missing("SessionStart", {
     "matcher": "",
     "hooks": [{
         "type": "command",
         "command": os.path.join(install_dir, "hooks", "session-start.sh"),
         "args": []
     }]
-}]
+})
 
-# PreToolUse hook — backup file before every write
-# Same rule: script as command, args as separate parameters.
-settings["hooks"]["PreToolUse"] = [{
+# PreToolUse hook — backup file before every Edit/Write
+_add_hook_if_missing("PreToolUse", {
     "matcher": "Edit|Write",
     "hooks": [{
         "type": "command",
         "command": os.path.join(install_dir, "hooks", "pretool-backup.sh"),
         "args": ["{action}", "{file_path}"]
     }]
-}]
+})
 
 # ── MCP Server (stdio) ───────────────────────────────────────────────────────
 # Register the NEUTRON MCP server. Merges with any existing mcpServers config

@@ -242,7 +242,7 @@ def _log_auto_action(step: str, notes: str):
         lock_path = log_path.with_suffix(".lock")
         with filelock.FileLock(str(lock_path), timeout=10):
             content = log_path.read_text(errors="replace") if log_path.exists() else f"# {today}\n"
-            log_path.write_text(content + entry + "\n")
+            atomic_write(log_path, content + entry + "\n")
     except Exception as e:
         import sys
         print(f"[AUTO-CONFIRM] WARNING: Failed to log auto-action to {log_path}: {e}", file=sys.stderr)

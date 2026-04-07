@@ -110,6 +110,7 @@ fi
 # Runs silently in background — no output unless debugging.
 DREAM_LOCK="$MEMORY_DIR/.dream.lock"
 DREAM_LAST="$MEMORY_DIR/.last_dream"
+COOKBOOK_DIR="$MEMORY_DIR/cookbooks"
 if [ ! -f "$DREAM_LOCK" ]; then
     SHOULD_RUN=0
     if [ -f "$DREAM_LAST" ]; then

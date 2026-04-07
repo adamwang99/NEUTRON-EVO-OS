@@ -66,7 +66,6 @@ def check_rate_limit(api_key: str) -> tuple[bool, str]:
     rate = cfg.get_rate_limit(api_key)
 
     # Lazy eviction: clean up expired buckets every N calls to prevent unbounded growth
-    nonlocal _eviction_counter
     _eviction_counter += 1
     if _eviction_counter >= _EVICTION_THRESHOLD:
         _eviction_counter = 0

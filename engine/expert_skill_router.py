@@ -150,7 +150,7 @@ def route_task(task: str, context: dict = None) -> dict:
     # false positives (e.g. "log" shouldn't match "login").
     # Format: (keyword, word_boundary: bool)
     skill_map = {
-        "context":   [("context", False), ("load", False), ("inject", False),
+        "context":   [("context", True), ("load", False), ("inject", False),
                       ("priority", False), ("claude.md", False), ("compact", False),
                       ("compression", False), ("survive", False),
                       ("ide window", False), ("context window", False), ("token overhead", False)],
@@ -175,7 +175,7 @@ def route_task(task: str, context: dict = None) -> dict:
                           ("agent team", False), ("swarm", False), ("concurrent", False),
                           ("batch", False), ("coordinate agents", False),
                           ("worktree", False), ("git worktree", False), ("divide work", False)],
-        "engine":    [("engine", False), ("router", False), ("route", False),
+        "engine":    [("engine", True), ("router", False), ("route", False),
                       ("ci", False), ("audit", False), ("observer", False),
                       ("dream", False), ("status", False), ("health", False),
                       ("stats", False), ("performance ledger", False), ("self-evolv", False)],
