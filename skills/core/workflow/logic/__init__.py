@@ -466,7 +466,12 @@ def _record_decision(decision: str, context: str = "", project: str = "", outcom
     """
     Record a user decision to memory/user_decisions.json.
     Best-effort — never blocks workflow on failure.
+    Skipped in test mode (NEUTRON_DREAM_TEST=1) to prevent test pollution.
     """
+    # Skip decision recording in test mode — prevents test pollution of
+    # memory/user_decisions.json when test_workflow_spec_* runs repeatedly.
+    if os.environ.get("NEUTRON_DREAM_TEST") == "1":
+        return
     try:
         from engine.user_decisions import record as record_decision_fn
         record_decision_fn(decision=decision, context=context, project=project, outcome=outcome)
