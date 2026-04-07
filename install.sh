@@ -188,6 +188,12 @@ if [[ "$SOURCE_TYPE" != "clone" ]]; then
 fi
 success "Files installed"
 
+# ── 3b. Make hook scripts executable ─────────────────────────────────────────
+# rsync/cp may strip execute bit. Re-apply it to all .sh scripts in hooks/.
+for f in "$INSTALL_DIR"/hooks/*.sh; do
+    [ -f "$f" ] && chmod +x "$f" 2>/dev/null || true
+done
+
 # ── 4. Create Directory Structure ───────────────────────────────────────────
 mkdir -p "$INSTALL_DIR/memory"
 mkdir -p "$INSTALL_DIR/memory/archived"
@@ -235,17 +241,27 @@ if "hooks" not in settings:
     settings["hooks"] = {}
 
 # SessionStart hook — runs on every Claude Code session start
+# Format: { "matcher": "", "hooks": [{ "type": "command", "command": "/full/path", "args": [] }] }
+# IMPORTANT: "command" must be the full path to the script, NOT "bash" with script in args.
+# Using bash + script-path-in-args causes "SessionStart: startup hook error".
 settings["hooks"]["SessionStart"] = [{
-    "command": "bash",
-    "args": [os.path.join(install_dir, "hooks", "session-start.sh")],
-    "type": "command"
+    "matcher": "",
+    "hooks": [{
+        "type": "command",
+        "command": os.path.join(install_dir, "hooks", "session-start.sh"),
+        "args": []
+    }]
 }]
 
 # PreToolUse hook — backup file before every write
+# Same rule: script as command, args as separate parameters.
 settings["hooks"]["PreToolUse"] = [{
-    "command": "bash",
-    "args": [os.path.join(install_dir, "hooks", "pretool-backup.sh"), "{action}", "{file_path}"],
-    "type": "command"
+    "matcher": "Edit|Write",
+    "hooks": [{
+        "type": "command",
+        "command": os.path.join(install_dir, "hooks", "pretool-backup.sh"),
+        "args": ["{action}", "{file_path}"]
+    }]
 }]
 
 # ── MCP Server (stdio) ───────────────────────────────────────────────────────
