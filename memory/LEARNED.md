@@ -328,3 +328,22 @@ When you fix a bug or discover a pattern:
   is never called is the same as no module. Every CLAUDE.md RULE must have
   implementation code that enforces it, not just documentation.
 
+
+---
+
+## [2026-04-08] Bug: _record_decision called in test mode — decision spam
+
+- **Symptom:** 1190 "SPEC approved for build" entries in user_decisions.json.
+  `user_decisions.json` grew from 2 to 1190+ entries during development,
+  all identical, all from test runs.
+- **Root cause:** `_record_decision()` had no test-mode guard. Each test run
+  of `test_workflow_spec_*` triggered `_record_spec_approval()` → `_record_decision()`.
+  `conftest.py` sets `NEUTRON_DREAM_TEST=1` to block dream cycles, but
+  `_record_decision` didn't check this env var.
+- **Fix:** `_record_decision()` now checks `NEUTRON_DREAM_TEST=1` and returns
+  early. Test pollution stopped. Cleanup: deduped to 2 unique entries.
+  - `skills/core/workflow/logic/__init__.py`: added env guard.
+- **Tags:** `#workflow` `#test-pollution` `#decision`
+- **Lesson:** Any side-effect function (writes to disk, state files) needs a
+  test-mode guard. conftest.py's `NEUTRON_DREAM_TEST` must be respected
+  by ALL state-writing functions, not just dream_engine.

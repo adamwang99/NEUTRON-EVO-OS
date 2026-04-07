@@ -21,10 +21,12 @@ All notable changes are documented here. The format follows [Keep a Changelog](h
 
 - `skills/core/workflow/logic/__init__.py`: Added `task` key to `_record_spec_approval()`
   context dict so decisions capture the actual task name
+- `skills/core/workflow/logic/__init__.py`: Skip `_record_decision()` when
+  `NEUTRON_DREAM_TEST=1` to prevent test-run pollution of user_decisions.json
 - `memory/LEARNED.md`: Added entry for audit-bug discovery (shipments+decisions
   module existed but were never called)
 - `memory/shipments.json`: Recorded audit fix session as first proper shipment
-- `memory/user_decisions.json`: Recorded audit decisions (SPEC approved, shipped)
+- `memory/user_decisions.json`: Deduplicated to 2 unique entries (test spam removed)
 
 ---
 
