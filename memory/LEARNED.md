@@ -5,7 +5,23 @@
 
 ---
 
-## [2026-04-07] Bug: SessionStart hook FD deadlock — every session exit 1
+## [2026-04-07] Bug: ((OK++)) with set -e causes silent exit 1
+
+- **Symptom:** `install.sh` ran every step successfully but always exited with code 1
+  even though all verifications passed. Users saw "[OK]" everywhere then "exit 1".
+- **Root cause:** `set -euo pipefail` in install.sh + `((OK++))` when `OK=0`. In bash,
+  `((expr))` returns 1 (failure) when the result of the expression is 0. `((0++))`
+  evaluates to 0 → bash sets exit status to 1 → `set -e` aborts the script.
+  Since `((OK++))` was the last statement of the if-block, the `else` was never
+  reachable when the test passed — making the bug invisible in normal runs.
+- **Fix:** Changed `((OK++))` → `((OK++)) || true` at lines 294 and 309.
+- **Tags:** `#bash` `#set-e` `#arithmetic`
+- **Lesson:** Never use `((var++))` as the last statement of a `set -e` block when
+  `var=0`. The post-increment expression evaluates to 0 → exit 1.
+
+---
+
+ — every session exit 1
 
 - **Symptom:** Every Claude Code session showed "SessionStart: startup hook error" even
   though the hook script completed its work. Exit code was 1.

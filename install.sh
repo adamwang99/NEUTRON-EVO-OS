@@ -291,7 +291,7 @@ d = discover_skills()
 print(f'skills: {len(d)}', file=sys.stderr)
 " 2>/dev/null; then
     success "Engine + Skill Registry: OK"
-    ((OK++))
+    ((OK++)) || true
 else
     error "Engine modules: FAILED"
 fi
@@ -306,7 +306,7 @@ print('OK')
 " 2>/dev/null; then
     success "Atomic Write: OK"
     rm -f "$INSTALL_DIR/memory/.install_test"
-    ((OK++))
+    ((OK++)) || true
 else
     error "Atomic Write: FAILED"
 fi
