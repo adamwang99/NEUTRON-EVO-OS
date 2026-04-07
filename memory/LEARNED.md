@@ -21,7 +21,7 @@
 
 ---
 
- — every session exit 1
+## [2026-04-07] Bug: SessionStart hook FD deadlock — every session exit 1
 
 - **Symptom:** Every Claude Code session showed "SessionStart: startup hook error" even
   though the hook script completed its work. Exit code was 1.
@@ -58,7 +58,112 @@
 
 ---
 
- — bleed into sibling projects
+## [2026-04-07] Bug: install.sh destroyed existing Claude Code hooks from other tools
+
+- **Symptom:** Running `install.sh` would silently overwrite the user's entire
+  `settings["hooks"]` object, deleting any `SessionStart` or `PreToolUse` hooks
+  from other Claude Code plugins or tools.
+- **Root cause:** `install.sh` step 6 assigned `settings["hooks"]["SessionStart"] = [...]`
+  and `settings["hooks"]["PreToolUse"] = [...]` directly, replacing the whole array
+  instead of appending.
+- **Fix:** Replaced direct assignment with `_add_hook_if_missing()` helper that checks
+  for duplicate command paths before appending, preserving all existing hooks.
+  - `install.sh`: Added `_add_hook_if_missing()` function; SessionStart and PreToolUse
+    now use `setdefault()` + duplicate detection instead of overwrite.
+- **Tags:** `#packaging` `#hook` `#data-loss`
+- **Lesson:** Installer merge logic must preserve existing config, never replace wholesale.
+
+---
+
+## [2026-04-07] Bug: session-start.sh COOKBOOK_DIR undefined — Dream Cycle never fired
+
+- **Symptom:** Dream Cycle auto-trigger never ran on any Claude Code session start,
+  even after 12+ hours. The `if [ "$SHOULD_RUN" -eq 1 ] && [ -d "$COOKBOOK_DIR" ]`
+  check always failed silently.
+- **Root cause:** `COOKBOOK_DIR` was never set anywhere in `session-start.sh`. Bash
+  expanded it to an empty string; `[ -d "" ]` is always False, so the entire
+  Dream Cycle Python subprocess was dead code.
+- **Fix:** Added `COOKBOOK_DIR="$MEMORY_DIR/cookbooks"` before the Dream Cycle block.
+  - `hooks/session-start.sh`: `DREAM_LOCK` line, added `COOKBOOK_DIR` assignment.
+- **Tags:** `#hook` `#dream-cycle` `#dead-code`
+- **Lesson:** Bash undefined variables expand to empty strings silently. Always define
+  variables before use, or use `set -u` to catch them.
+
+---
+
+## [2026-04-07] Bug: mcp_server/auth.py nonlocal in module-level function
+
+- **Symptom:** Rate limiter could not be imported — Python raised `SyntaxError:
+  nonlocal declaration not allowed at module level`.
+- **Root cause:** `nonlocal _eviction_counter` on line 69 of `auth.py`. The variable
+  `_eviction_counter` is a module-level global, not a closure variable. `nonlocal`
+  is only valid inside nested functions. Using it at module level is always a
+  SyntaxError before any code runs.
+- **Fix:** Deleted `nonlocal _eviction_counter`. At module level, `_eviction_counter += 1`
+  is a plain global mutation — no declaration needed.
+  - `mcp_server/auth.py:69`: removed the offending line.
+- **Tags:** `#mcp` `#python` `#syntax`
+- **Lesson:** `nonlocal` is for closure scopes. `global` is for module-level. Neither
+  is needed for simple module-level mutation — just assign directly.
+
+---
+
+## [2026-04-07] Bug: engine/auto_confirm.py write_text inside filelock not atomic
+
+- **Symptom:** `_log_auto_action()` used `path.write_text()` inside a filelock, but
+  `write_text()` writes synchronously without fsync. A crash between the lock release
+  and disk commit could lose the last logged entry.
+- **Root cause:** Filelock protected the read-modify-write sequence, but the actual write
+  used `write_text()` which is not atomic on crash. No fsync, no temp file, no rename.
+- **Fix:** Replaced `log_path.write_text(content + entry + "\n")` with
+  `atomic_write(log_path, content + entry + "\n")` which uses temp file + fsync + rename.
+  - `engine/auto_confirm.py:245`: `write_text()` → `atomic_write()`
+- **Tags:** `#atomic` `#data-integrity` `#crash-safety`
+- **Lesson:** Filelock alone is not sufficient for crash-safety. Every write inside
+  a lock must also be atomic (temp+fsync+rename) to survive system crashes.
+
+---
+
+## [2026-04-07] Bug: engine/dream_engine.py lock cache reassigned every call
+
+- **Symptom:** `_DREAM_LOCK_CACHE` was reassigned to a fresh `FileLock` on every call
+  to `_get_dream_lock()`. Since `is_locked()` on a new FileLock instance always returns
+  False (each instance tracks its own lock state), the re-entrancy guard was broken —
+  concurrent dream cycles could start simultaneously.
+- **Root cause:** `_DREAM_LOCK_CACHE = _filelock.FileLock(lock_path, timeout=5)` inside
+  the function body ran on every call, creating a brand-new lock object each time.
+  The old lock's `is_locked()` state was lost.
+- **Fix:** Changed to lazy initialization — `_DREAM_LOCK_CACHE` is created once,
+  cached, and reused. `_get_dream_lock()` now only creates the lock if `_DREAM_LOCK_CACHE
+  is None`.
+  - `engine/dream_engine.py:71-79`: lazy init instead of reassign-every-call.
+- **Tags:** `#concurrency` `#filelock` `#re-entrancy`
+- **Lesson:** Caching a lock object is valid only if the cache is stable across calls.
+  Reassigning a new lock every call defeats the purpose of caching entirely.
+
+---
+
+## [2026-04-07] Bug: expert_skill_router false positives on "context" and "engine"
+
+- **Symptom:** The `context` and `engine` skills were routing incorrectly on everyday
+  prompts like "fix the context of this email" or "check the engine light" because
+  these common English words appear in non-technical sentences.
+- **Root cause:** Keywords `"context"` and `"engine"` used `word_boundary=False`,
+  matching them anywhere in the text regardless of surrounding word boundaries.
+- **Fix:** Changed both to `word_boundary=True` so they only match when surrounded
+  by word boundaries, not as substrings of unrelated words.
+  - `engine/expert_skill_router.py:153,178`: `("context", False)` → `True`,
+    `("engine", False)` → `True`.
+- **Tags:** `#routing` `#false-positive` `#keyword`
+- **Lesson:** Short generic English words should always use word-boundary matching
+  in keyword routers to avoid false positives on casual language.
+
+## [2026-04-05] Bug: Observer scan parent directory — bleed into sibling projects
+
+
+---
+
+
 
 - **Symptom:** Opening a project in a subdirectory caused Claude Code to scan the root
   directory and process sibling projects.
@@ -152,7 +257,7 @@ When you fix a bug or discover a pattern:
 
 ---
 
-*Last updated: 2026-04-05*
+*Last updated: 2026-04-07*
 *Auto-archived from: memory/YYYY-MM-DD.md sessions*
 
 ## [2026-04-05] Bug: Decisions from trading-bot mixed into NEUTRON project
