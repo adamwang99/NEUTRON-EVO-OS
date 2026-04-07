@@ -78,8 +78,10 @@ fi
 if [ -f "$NEUTRON_ROOT/engine/cli/main.py" ]; then
     # Open lock file on FD 200 (creates if not exists). flock releases automatically
     # when the script exits (normal or crash).
-    exec 200>"$GC_LOCK"
-    if flock -n 200; then
+    # Lock FD lives ONLY inside subshell — parent never holds it.
+    # flock(1) on a fresh FD opens the file, acquires lock, releases on subshell exit.
+    (
+        flock -n 200 || exit 1   # acquire exclusive lock on FD 200; fail fast if busy
         (
             # 1. Bash cleanup: __pycache__, *.pyc, .pytest_cache (fast, reliable)
             find "$NEUTRON_ROOT" -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null
@@ -98,9 +100,9 @@ if [ -f "$NEUTRON_ROOT/engine/cli/main.py" ]; then
             # 4. Python cleanup: count-based cap + pending expiry (bash can't do this)
             python3 "$HOOKS_DIR/gc_lightweight.py" 2>/dev/null
         ) 2>/dev/null
-        flock -u 200  # release lock
-    fi
-    # Lock auto-releases on script exit (FD 200 closes)
+        flock -u 200  # explicit release (redundant but clear)
+    ) 200>"$GC_LOCK"
+    # Lock is NEVER held by parent shell. Subshell exits → lock auto-releases.
 fi
 
 # ── Dream Cycle Auto-Trigger ────────────────────────────────────────────────

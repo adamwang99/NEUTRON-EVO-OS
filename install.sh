@@ -1,376 +1,363 @@
 #!/usr/bin/env bash
 # ─────────────────────────────────────────────────────────────────────────────
-# NEUTRON EVO OS v4.1.0 — Unified Installer
+# NEUTRON EVO OS — Installer v4.3.1
+# Cross-platform: macOS, Linux, WSL
+# Usage: curl -fsSL https://... | bash
+#    or: bash install.sh [--dir ~/.neutron-evo-os] [--skip-claude]
 # ─────────────────────────────────────────────────────────────────────────────
-# One script for everything:
-#   • CLI only     → bash install.sh cli
-#   • CLI + MCP    → bash install.sh mcp    (recommended)
-#   • System-wide  → bash install.sh full   (MCP + hooks + all projects)
-#   • Interactive  → bash install.sh        (asks what to install)
-# ─────────────────────────────────────────────────────────────────────────────
-set -e
 
-# ANSI
-RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'
-CYAN='\033[0;36m'; BOLD='\033[1m'; RESET='\033[0m'
-OK="${GREEN}✓${RESET}"; ERR="${RED}✗${RESET}"; WARN="${YELLOW}⚠${RESET}"
+set -euo pipefail
 
-info()  { echo -e "${CYAN}[info]${RESET} $1"; }
-ok()    { echo -e "${OK} $1"; }
-warn()  { echo -e "${WARN} $1"; }
-error() { echo -e "${ERR} $1"; exit 1; }
+# ── Defaults ──────────────────────────────────────────────────────────────────
+INSTALL_DIR="${NEUTRON_INSTALL_DIR:-$HOME/.neutron-evo-os}"
+SKIP_CLAUDE="${NEUTRON_SKIP_CLAUDE:-0}"
+FORCE="${NEUTRON_FORCE:-0}"
+VERBOSE="${NEUTRON_VERBOSE:-0}"
 
-# ── Resolve NEUTRON_ROOT ─────────────────────────────────────────────────────
-if [ -n "$NEUTRON_ROOT" ] && [ -d "$NEUTRON_ROOT" ]; then
-    NEUTRON_ROOT_DIR="$(realpath "$NEUTRON_ROOT")"
-else
-    # Detect from this script's location
-    SOURCE="${BASH_SOURCE[0]}"
-    while [ -L "$SOURCE" ]; do SOURCE="$(readlink -f "$SOURCE")"; done
-    NEUTRON_ROOT_DIR="$(cd "$(dirname "$SOURCE")" && pwd)"
-fi
+# ── Colors ───────────────────────────────────────────────────────────────────
+RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; BLUE='\033[0;34m'
+BOLD='\033[1m'; RESET='\033[0m'
 
-# ── Verify repo ───────────────────────────────────────────────────────────────
-check_repo() {
-    for f in SOUL.md engine/cli/main.py mcp_server/__init__.py; do
-        if [ ! -f "$NEUTRON_ROOT_DIR/$f" ]; then
-            error "Not a NEUTRON-EVO-OS repository: $NEUTRON_ROOT_DIR/$f not found"
+info()    { echo -e "${BLUE}[INFO]${RESET} $*"; }
+success() { echo -e "${GREEN}[OK]${RESET} $*"; }
+warn()    { echo -e "${YELLOW}[WARN]${RESET} $*"; }
+error()   { echo -e "${RED}[ERROR]${RESET} $*" >&2; }
+section() { echo ""; echo -e "${BOLD}══ $@${RESET}"; }
+
+# ── Parse args ───────────────────────────────────────────────────────────────
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --dir)         INSTALL_DIR="$2"; shift 2 ;;
+        --skip-claude) SKIP_CLAUDE=1; shift ;;
+        --force)       FORCE=1; shift ;;
+        --verbose)     VERBOSE=1; set -x; shift ;;
+        --help|-h)
+            cat << 'USAGE'
+NEUTRON EVO OS Installer v4.3.1
+
+Usage: install.sh [options]
+  --dir DIR             Install to DIR (default: ~/.neutron-evo-os)
+  --skip-claude         Skip Claude Code installation check
+  --force              Reinstall even if already installed
+  --verbose            Verbose output (set -x)
+  --help               Show this help
+
+Environment variables:
+  NEUTRON_INSTALL_DIR   Override --dir
+  NEUTRON_SKIP_CLAUDE    Skip Claude Code check
+  NEUTRON_FORCE         Force reinstall
+USAGE
+            exit 0 ;;
+        *) error "Unknown option: $1"; exit 1 ;;
+    esac
+done
+
+# ── Banner ───────────────────────────────────────────────────────────────────
+cat << 'BANNER'
+
+  ███╗   ██╗███████╗██╗  ██╗██╗   ██╗███████╗
+  ████╗  ██║██╔════╝╚██╗██╔╝██║   ██║██╔════╝
+  ██╔██╗ ██║█████╗   ╚███╔╝ ██║   ██║███████╗
+  ██║╚██╗██║██╔══╝   ██╔██╗ ██║   ██║╚════██║
+  ██║ ╚████║███████╗██╔╝ ██╗╚██████╔╝███████║
+  ╚═╝  ╚═══╝╚══════╝╚═╝  ╚═╝ ╚═════╝ ╚══════╝
+  ██╗      ╔════════════════════════════╗
+  ██║      ║  EVO OS — Installer v4.3.1 ║
+  ╚═══════╝                                ╚══════════════╝
+
+BANNER
+
+# ── 1. Prerequisites ────────────────────────────────────────────────────────
+section "Checking Prerequisites"
+
+# Python 3.10+
+PYTHON_CMD=""
+for cmd in python3 python3.11 python3.10 python3.12; do
+    if command -v "$cmd" &>/dev/null; then
+        PY_VERSION=$($cmd -c 'import sys; print(sys.version_info[1])')
+        if [[ "$PY_VERSION" -ge 10 ]]; then
+            PYTHON_CMD="$cmd"
+            break
         fi
-    done
-}
-check_repo
+    fi
+done
 
-# ── Banner ────────────────────────────────────────────────────────────────────
-echo -e "${BOLD}${CYAN}"
-echo "╔══════════════════════════════════════════════════════════╗"
-echo "║       NEUTRON EVO OS v4.1.0 — Unified Installer         ║"
-echo "║       ∫f(t)dt — Functional Credibility Over Inertia      ║"
-echo "╚══════════════════════════════════════════════════════════╝"
-echo -e "${RESET}"
-echo -e "  Root: ${BOLD}$NEUTRON_ROOT_DIR${RESET}"
-echo ""
+if [[ -z "$PYTHON_CMD" ]]; then
+    error "Python 3.10+ not found."
+    echo "  Install: python.org/downloads or: brew install python3"
+    exit 1
+fi
+success "Python 3.$PY_VERSION found: $PYTHON_CMD"
 
-# ── Parse mode ────────────────────────────────────────────────────────────────
-MODE="${1:-interactive}"
-if [ "$MODE" = "cli" ]; then
-    MODE_CLI=true; MODE_MCP=false; MODE_FULL=false
-elif [ "$MODE" = "mcp" ]; then
-    MODE_CLI=true; MODE_MCP=true; MODE_FULL=false
-elif [ "$MODE" = "full" ]; then
-    MODE_CLI=true; MODE_MCP=true; MODE_FULL=true
-elif [ "$MODE" = "interactive" ] || [ "$1" = "" ]; then
-    echo "What do you want to install?"
-    echo "  [1] CLI only          — neutron command (${BOLD}bash install.sh cli${RESET})"
-    echo "  [2] CLI + MCP         — neutron + Claude Code tools (${BOLD}bash install.sh mcp${RESET}) ← recommended"
-    echo "  [3] Full system-wide  — MCP + hooks + apply to all projects (${BOLD}bash install.sh full${RESET})"
-    echo ""
-    echo -n "Select [1/2/3] (default: 2): "
-    read -r choice
-    case "${choice:-2}" in
-        1) MODE_CLI=true; MODE_MCP=false; MODE_FULL=false ;;
-        2) MODE_CLI=true; MODE_MCP=true; MODE_FULL=false ;;
-        3) MODE_CLI=true; MODE_MCP=true; MODE_FULL=true ;;
-        *) MODE_CLI=true; MODE_MCP=true; MODE_FULL=false ;;
-    esac
+# pip
+if ! $PYTHON_CMD -m pip --version &>/dev/null; then
+    warn "pip not found — installing..."
+    $PYTHON_CMD -m ensurepip --upgrade 2>/dev/null || true
+fi
+if ! $PYTHON_CMD -m pip --version &>/dev/null; then
+    error "pip not available. Install Python with pip: python.org/downloads"
+    exit 1
+fi
+success "pip available"
+
+# Required Python packages
+REQUIRED=("filelock" "fastapi" "uvicorn" "pydantic")
+MISSING_PKGS=()
+for pkg in "${REQUIRED[@]}"; do
+    if ! $PYTHON_CMD -c "import ${pkg//-/}" 2>/dev/null; then
+        MISSING_PKGS+=("$pkg")
+    fi
+done
+
+if [[ ${#MISSING_PKGS[@]} -gt 0 ]]; then
+    info "Installing: ${MISSING_PKGS[*]}"
+    $PYTHON_CMD -m pip install "${MISSING_PKGS[@]}" --quiet
+fi
+success "All required packages installed"
+
+# git (optional)
+if command -v git &>/dev/null; then
+    success "git found: $(git --version | cut -d' ' -f3)"
 else
-    error "Unknown mode: $1. Use: cli | mcp | full | interactive"
+    warn "git not found — hub/satellite sync disabled"
 fi
 
-# ══════════════════════════════════════════════════════════════════════════════
-# PART 1 — CLI (always)
-# ══════════════════════════════════════════════════════════════════════════════
-if $MODE_CLI; then
-    echo -e "\n${BOLD}─── Installing NEUTRON CLI ───${RESET}"
-
-    # Detect writable location
-    if [ -w /usr/local/bin ] || [ "$(id -u)" = "0" ]; then
-        TARGET="/usr/local/bin/neutron"
-        TARGET_DIR="/usr/local/bin"
+# Claude Code (optional)
+if [[ "$SKIP_CLAUDE" -eq 0 ]]; then
+    if command -v claude &>/dev/null; then
+        success "Claude Code installed"
     else
-        TARGET="$HOME/.local/bin/neutron"
-        TARGET_DIR="$HOME/.local/bin"
-        mkdir -p "$TARGET_DIR"
-    fi
-
-    # Write wrapper using Python (avoids shell quoting hell)
-    python3 - "$TARGET" "$NEUTRON_ROOT_DIR" << 'PYEOF'
-import os, sys
-target, root = sys.argv[1], sys.argv[2]
-# Walk upward to find engine/cli/main.py (robust against symlinks)
-import pathlib
-p = pathlib.Path(root)
-for _ in range(20):  # max 20 levels up
-    if (p / "engine" / "cli" / "main.py").exists():
-        break
-    p = p.parent
-wrapper = f"""#!/bin/bash
-# NEUTRON CLI — Auto-discovers NEUTRON_ROOT
-# Resolved root: {p}
-exec python3 "{p}/engine/cli/main.py" "$@"
-"""
-with open(target, "w") as f:
-    f.write(wrapper)
-os.chmod(target, 0o755)
-print(f"OK: {target}  (NEUTRON_ROOT={p})")
-PYEOF
-
-    ok "neutron installed → $TARGET"
-
-    # Warn if PATH issue
-    case ":$PATH:" in
-        *":$TARGET_DIR:"*) ;;
-        *) warn "Add to ~/.bashrc:  export PATH=\"$TARGET_DIR:\$PATH\"" ;;
-    esac
-
-    # Quick verify
-    if command -v neutron &>/dev/null; then
-        echo -n "  Running verify: "
-        neutron status 2>/dev/null | head -1 | sed 's/^/→ /' || true
+        warn "Claude Code not installed."
+        echo "   Install: docs.anthropic.com/en/docs/claude-code"
+        echo "   Or: brew install anthropic/claude-code/claude"
     fi
 fi
 
-# ══════════════════════════════════════════════════════════════════════════════
-# PART 2 — MCP Server + SessionStart Hook
-# ══════════════════════════════════════════════════════════════════════════════
-if $MODE_MCP; then
-    echo -e "\n${BOLD}─── Installing MCP Server ───${RESET}"
+# ── 2. Detect Source ────────────────────────────────────────────────────────
+section "Preparing Installation"
 
-    # Check Node.js
-    if command -v node &>/dev/null; then
-        NODE_VERSION=$(node --version 2>/dev/null || echo "unknown")
-        ok "Node.js found: $NODE_VERSION"
-    else
-        warn "Node.js not found — Claude Code may not work"
-        warn "Install via: curl -fsSL https://fnm.vercel.app/install | bash"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Dev install vs remote clone
+if [[ -f "$SCRIPT_DIR/engine/__init__.py" ]]; then
+    SOURCE_DIR="$SCRIPT_DIR"
+    SOURCE_TYPE="local"
+    info "Detected: local install from $SOURCE_DIR"
+elif [[ -f "$SCRIPT_DIR/skills/core/workflow/SKILL.md" ]]; then
+    SOURCE_DIR="$SCRIPT_DIR"
+    SOURCE_TYPE="source"
+    info "Detected: source install"
+else
+    SOURCE_TYPE="clone"
+    info "Remote install (git clone)..."
+    if ! command -v git &>/dev/null; then
+        error "git required for remote install."
+        exit 1
     fi
-
-    # Check Claude Code
-    if command -v claude &>/dev/null; then
-        ok "Claude Code found"
-    else
-        warn "Claude Code not in PATH"
+    if [[ -d "$INSTALL_DIR/.git" ]] && [[ "$FORCE" -eq 0 ]]; then
+        success "Already installed at $INSTALL_DIR (use --force to reinstall)"
+        exit 0
     fi
-
-    # Add MCP server
-    if command -v claude &>/dev/null; then
-        info "Adding MCP server to Claude Code..."
-        claude mcp add neutron-evo-os -- python3 -m mcp_server 2>/dev/null && ok "MCP server registered" || {
-            # Try user scope if local already exists
-            claude mcp add -s user neutron-evo-os -- python3 -m mcp_server 2>/dev/null && ok "MCP server registered (user scope)" || {
-                warn "MCP add failed — you may need to add manually:"
-                warn '  claude mcp add neutron-evo-os -- python3 -m mcp_server'
-            }
-        }
-    else
-        info "Claude Code not found — add MCP manually:"
-        info "  claude mcp add neutron-evo-os -- python3 -m mcp_server"
-        info "Or copy .mcp.json into project root"
+    if [[ "$FORCE" -eq 1 && -d "$INSTALL_DIR" ]]; then
+        warn "Removing existing installation..."
+        rm -rf "$INSTALL_DIR"
     fi
-
-    # Copy .mcp.json if not already there
-    if [ ! -f "$NEUTRON_ROOT_DIR/.mcp.json" ]; then
-        cat > "$NEUTRON_ROOT_DIR/.mcp.json" << 'MCPJSON'
-{
-  "mcpServers": {
-    "NEUTRON-EVO-OS": {
-      "command": "python3",
-      "args": ["-m", "mcp_server"],
-      "env": {}
+    git clone https://github.com/your-username/neutron-evo-os.git "$INSTALL_DIR" --depth=1 2>/dev/null || {
+        error "Failed to clone. Check git remote."
+        exit 1
     }
-  }
-}
-MCPJSON
-        ok ".mcp.json created"
+    SOURCE_DIR="$INSTALL_DIR"
+fi
+
+# ── 3. Install Files ────────────────────────────────────────────────────────
+section "Installing to $INSTALL_DIR"
+
+mkdir -p "$INSTALL_DIR"
+
+if [[ "$SOURCE_TYPE" != "clone" ]]; then
+    info "Copying NEUTRON files..."
+    # rsync if available, else cp
+    if command -v rsync &>/dev/null; then
+        rsync -av --exclude='.git' --exclude='__pycache__' \
+            --exclude='*.pyc' --exclude='*.pyo' \
+            --exclude='.pytest_cache' \
+            "$SOURCE_DIR/" "$INSTALL_DIR/" || true
     else
-        ok ".mcp.json already exists"
+        cp -r "$SOURCE_DIR"/* "$INSTALL_DIR/" 2>/dev/null || true
     fi
+fi
+success "Files installed"
 
-    # ── Symlink ~/.neutron-evo-os ────────────────────────────────────────────
-    # This is the canonical location for ALL projects to reference
-    NEUTRON_LINK="$HOME/.neutron-evo-os"
-    if [ ! -e "$NEUTRON_LINK" ]; then
-        ln -s "$NEUTRON_ROOT_DIR" "$NEUTRON_LINK"
-        ok "~/.neutron-evo-os → $NEUTRON_ROOT_DIR"
-    elif [ -L "$NEUTRON_LINK" ] && [ "$(readlink "$NEUTRON_LINK")" != "$NEUTRON_ROOT_DIR" ]; then
-        warn "~/.neutron-evo-os points elsewhere: $(readlink "$NEUTRON_LINK")"
-    else
-        ok "~/.neutron-evo-os already linked"
-    fi
+# ── 4. Create Directory Structure ───────────────────────────────────────────
+mkdir -p "$INSTALL_DIR/memory"
+mkdir -p "$INSTALL_DIR/memory/archived"
+mkdir -p "$INSTALL_DIR/memory/cookbooks"
+mkdir -p "$INSTALL_DIR/memory/pending"
+mkdir -p "$INSTALL_DIR/memory/.backup"
+mkdir -p "$INSTALL_DIR/hooks"
 
-    # ── SessionStart hook ─────────────────────────────────────────────────────
-    # Use canonical ~/.neutron-evo-os path (not hardcoded project path)
-    HOOK_SCRIPT="$NEUTRON_LINK/hooks/session-start.sh"
-    chmod +x "$HOOK_SCRIPT" 2>/dev/null || true
-    CLAUDE_SETTINGS="$HOME/.claude/settings.json"
-    mkdir -p "$HOME/.claude"
+# ── 5. Run First-Run Setup ─────────────────────────────────────────────────
+section "First-Run Setup"
 
-    # Use Python for safe JSON merging (no jq dependency)
-    python3 - "$CLAUDE_SETTINGS" "$HOOK_SCRIPT" << 'PYEOF'
-import json, sys, os
-settings_path = sys.argv[1]
-hook_script = sys.argv[2]
+NEUTRON_ROOT="$INSTALL_DIR" $PYTHON_CMD "$INSTALL_DIR/hooks/neutron-first-run.py" "$INSTALL_DIR" 2>/dev/null && \
+    success "First-run complete" || warn "First-run warnings (may be OK)"
 
-data = {}
-if os.path.exists(settings_path):
-    content = open(settings_path).read()
-    if content.strip():
-        try:
-            data = json.loads(content)
-        except json.JSONDecodeError:
-            print("WARNING: settings.json corrupted, creating fresh", file=sys.stderr)
-            data = {}
+# ── 6. Configure Claude Code Hooks ─────────────────────────────────────────
+section "Configuring Claude Code Hooks"
 
-# Only add if not already present
-existing = data.get("hooks", {}).get("SessionStart", [])
-already_has = any(
-    isinstance(h, dict) and "command" in h and "session-start" in h.get("command", "")
-    for lst in existing
-    if isinstance(lst, dict) and "hooks" in lst
-    for h in lst.get("hooks", [])
-)
-if already_has:
-    print("OK: SessionStart hook already configured")
+CLAUDE_DIR="$HOME/.claude"
+mkdir -p "$CLAUDE_DIR"
+SETTINGS_FILE="$CLAUDE_DIR/settings.json"
+
+# Backup existing settings
+if [[ -f "$SETTINGS_FILE" ]]; then
+    cp "$SETTINGS_FILE" "$SETTINGS_FILE.bak.$(date +%Y%m%d_%H%M%S)"
+fi
+
+# Python to update settings.json
+$PYTHON_CMD << PYTHON_SCRIPT
+import json, os, sys
+
+settings_file = "$SETTINGS_FILE"
+install_dir = "$INSTALL_DIR"
+
+# Read existing settings
+if os.path.exists(settings_file):
+    try:
+        settings = json.load(open(settings_file))
+    except Exception:
+        settings = {}
 else:
-    data["hooks"] = data.get("hooks", {})
-    data["hooks"]["SessionStart"] = [{
-        "hooks": [{"type": "command", "command": f"bash \"{hook_script}\""}]
-    }]
-    with open(settings_path, "w") as f:
-        json.dump(data, f, indent=2)
-    print("OK: SessionStart hook added")
-PYEOF
+    settings = {}
 
-    ok "SessionStart hook installed"
-fi
+# Ensure hooks structure
+if "hooks" not in settings:
+    settings["hooks"] = {}
 
-# ══════════════════════════════════════════════════════════════════════════════
-# PART 3 — System-wide (hooks + all projects)
-# ══════════════════════════════════════════════════════════════════════════════
-if $MODE_FULL; then
-    echo -e "\n${BOLD}─── System-wide Setup ───${RESET}"
+# SessionStart hook — runs on every Claude Code session start
+settings["hooks"]["SessionStart"] = [{
+    "command": "bash",
+    "args": [os.path.join(install_dir, "hooks", "session-start.sh")],
+    "type": "command"
+}]
 
-    CLAUDE_DIR="$HOME/.claude"
-    CLAUDE_SETTINGS="$CLAUDE_DIR/settings.json"
-    mkdir -p "$CLAUDE_DIR"
+# PreToolUse hook — backup file before every write
+settings["hooks"]["PreToolUse"] = [{
+    "command": "bash",
+    "args": [os.path.join(install_dir, "hooks", "pretool-backup.sh"), "{action}", "{file_path}"],
+    "type": "command"
+}]
 
-    # Canonical symlink is created in MODE_MCP above (reuse it)
-    NEUTRON_LINK="$HOME/.neutron-evo-os"
-    NEUTRON_HOME=$(readlink -f "$NEUTRON_LINK" 2>/dev/null || echo "$NEUTRON_ROOT_DIR")
-
-    # 1. ~/.claude/CLAUDE.md (global fallback) — use ~ for portability
-    cat > "$CLAUDE_DIR/CLAUDE.md" << 'EOF'
-# NEUTRON EVO OS — Global Context
-> ∫f(t)dt — Functional Credibility Over Institutional Inertia
-
-## System
-- **Version**: 4.2.0
-- **NEUTRON_ROOT**: ~/.neutron-evo-os
-- **Owner**: Adam Wang
-
-## Workflow
-/explore → /discover → /spec (USER REVIEW) → /build → /accept (USER CONFIRMS) → /ship
-
-## Skills (7 core)
-context | memory | workflow | engine | checkpoint | discovery | acceptance_test
-
-## Quick Commands
-- neutron status   — System health
-- neutron audit    — CI audit (7 skills)
-- neutron discover — 12-question interview
-- neutron log      — Today's memory
-
-## Full Context
-Full files at: $NEUTRON_ROOT_DIR/
-*Loaded at every Claude Code session start.*
-EOF
-    ok "~/.claude/CLAUDE.md created"
-
-    # 3. Add NEUTRON_ROOT env to settings.json (use canonical path)
-    if [ -f "$CLAUDE_SETTINGS" ]; then
-        if ! grep -q "NEUTRON_ROOT" "$CLAUDE_SETTINGS" 2>/dev/null; then
-            # Use Python for safe JSON merge (no jq needed)
-            python3 - "$CLAUDE_SETTINGS" << 'PYEOF'
-import json, sys
-path = sys.argv[1]
-data = json.loads(open(path).read())
-data.setdefault("env", {})["NEUTRON_ROOT"] = "~/.neutron-evo-os"
-data.setdefault("env", {})["CLAUDE_CODE_NO_FLICKER"] = "1"
-open(path, "w").write(json.dumps(data, indent=2))
-print("OK: Added NEUTRON_ROOT to settings.json")
-PYEOF
-        else
-            ok "settings.json already has NEUTRON_ROOT"
-        fi
-    else
-        cat > "$CLAUDE_SETTINGS" << 'EOF'
-{
-  "permissions": {
-    "defaultMode": "acceptEdits",
-    "allow": ["Bash", "Read", "Edit", "Write", "Glob", "Grep", "WebFetch", "mcp__*"]
-  },
-  "skipDangerousModePermissionPrompt": true,
-  "env": {
-    "NEUTRON_ROOT": "~/.neutron-evo-os",
-    "CLAUDE_CODE_NO_FLICKER": "1"
-  }
+# ── MCP Server (stdio) ───────────────────────────────────────────────────────
+# Register the NEUTRON MCP server. Merges with any existing mcpServers config
+# rather than replacing — user may have other MCP servers already configured.
+# The mcp_server module uses self-location (mcp_server/__init__.py adds parent
+# to sys.path), so it works regardless of where the user installed NEUTRON.
+_mcp_config = {
+    "type": "stdio",
+    "command": "python3",
+    "args": ["-m", "mcp_server"],
+    "env": {}
 }
-EOF
-        ok "Created ~/.claude/settings.json"
-    fi
+# Preserve user's env vars if they set NEUTRON_ROOT externally
+if "env" not in _mcp_config:
+    _mcp_config["env"] = {}
+if not settings.get("mcpServers", {}).get("neutron-evo-os", {}).get("env", {}).get("NEUTRON_ROOT"):
+    _mcp_config["env"].setdefault("NEUTRON_ROOT", install_dir)
 
-    # 4. Auto-apply to existing projects (use canonical symlink path)
-    echo -e "\n${BOLD}─── Auto-apply to existing projects ───${RESET}"
-    # Scan common project directories
-    for PROJECTS_DIR in "$HOME/mnt/data/projects" "$HOME/Projects" "$HOME/projects" "$HOME/code" "$HOME/repos"; do
-        [ -d "$PROJECTS_DIR" ] && break
-    done
-    if [ -d "$PROJECTS_DIR" ]; then
-        APPLY=0
-        for project_dir in "$PROJECTS_DIR"/*/; do
-            [ -d "$project_dir" ] || continue
-            name=$(basename "$project_dir")
-            # Skip NEUTRON-EVO-OS itself
-            [ "$name" = "ai-context-master" ] || [ "$name" = "NEUTRON-EVO-OS" ] && continue
+settings.setdefault("mcpServers", {})["neutron-evo-os"] = _mcp_config
 
-            # Only apply if it has CLAUDE.md (is a Claude Code project)
-            [ -f "$project_dir/CLAUDE.md" ] || continue
+os.makedirs(os.path.dirname(settings_file), exist_ok=True)
+with open(settings_file, "w") as f:
+    json.dump(settings, f, indent=2)
 
-            echo -n "  → $name: "
-            mkdir -p "$project_dir/memory/archived" 2>/dev/null || true
-            # Copy missing NEUTRON files (use symlink source)
-            for f in SOUL.md MANIFESTO.md RULES.md PERFORMANCE_LEDGER.md START.md; do
-                [ -f "$NEUTRON_HOME/$f" ] && [ ! -f "$project_dir/$f" ] && cp "$NEUTRON_HOME/$f" "$project_dir/$f"
-            done
-            echo -e "${OK}applied"
-            APPLY=$((APPLY+1))
-        done
-        [ "$APPLY" -eq 0 ] && echo "  (no other Claude Code projects found)"
+print("settings updated")
+PYTHON_SCRIPT
+
+success "Claude Code settings configured at $SETTINGS_FILE"
+info "Review: cat $SETTINGS_FILE"
+
+# ── 7. Verify Installation ────────────────────────────────────────────────
+section "Verifying Installation"
+
+OK=0
+
+# Engine import
+if NEUTRON_ROOT="$INSTALL_DIR" $PYTHON_CMD -c "
+import sys; sys.path.insert(0, '$INSTALL_DIR')
+from engine import skill_execution
+from engine.skill_registry import discover_skills
+d = discover_skills()
+print(f'skills: {len(d)}', file=sys.stderr)
+" 2>/dev/null; then
+    success "Engine + Skill Registry: OK"
+    ((OK++))
+else
+    error "Engine modules: FAILED"
+fi
+
+# Atomic write
+if NEUTRON_ROOT="$INSTALL_DIR" $PYTHON_CMD -c "
+import sys; sys.path.insert(0, '$INSTALL_DIR')
+from engine._atomic import atomic_write
+from pathlib import Path
+atomic_write(Path('$INSTALL_DIR/memory/.install_test'), 'test')
+print('OK')
+" 2>/dev/null; then
+    success "Atomic Write: OK"
+    rm -f "$INSTALL_DIR/memory/.install_test"
+    ((OK++))
+else
+    error "Atomic Write: FAILED"
+fi
+
+# Tests
+if [[ "$OK" -ge 2 ]]; then
+    info "Running quick test..."
+    if NEUTRON_ROOT="$INSTALL_DIR" $PYTHON_CMD -m pytest tests/ -x -q --tb=no 2>/dev/null | tail -1 | grep -q "passed"; then
+        success "All tests passed"
+    else
+        warn "Tests not run (pytest may not be installed)"
     fi
 fi
 
-# ══════════════════════════════════════════════════════════════════════════════
-# Summary
-# ══════════════════════════════════════════════════════════════════════════════
-echo -e "\n${BOLD}${CYAN}╔══════════════════════════════════════════════════════════╗"
-echo "║           INSTALL COMPLETE — ∫f(t)dt                              ║"
-echo "╚══════════════════════════════════════════════════════════╝${RESET}"
-echo ""
-echo -e "  ${BOLD}NEUTRON_ROOT:${RESET} $NEUTRON_ROOT_DIR"
-echo ""
-echo -e "  ${BOLD}Commands:${RESET}"
-echo "    neutron status          System health"
-echo "    neutron audit           CI audit (7 skills)"
-echo "    neutron discover \"...\" Start discovery"
-echo "    neutron --help          All 18 commands"
-echo ""
-echo -e "  ${BOLD}MCP tools (in Claude Code):${RESET}"
-echo "    neutron_checkpoint | neutron_context | neutron_discovery"
-echo "    neutron_memory | neutron_workflow | neutron_acceptance"
-echo "    neutron_engine | neutron_audit | neutron_auto_confirm"
-echo ""
+# ── 8. Generate API Key ───────────────────────────────────────────────────
+section "Generating API Key"
 
-if $MODE_FULL; then
-    echo -e "  ${YELLOW}⚠  Restart Claude Code sessions for hooks to take effect.${RESET}"
+if [[ "$SOURCE_TYPE" != "clone" ]]; then
+    API_KEY=$(NEUTRON_ROOT="$INSTALL_DIR" $PYTHON_CMD -c "
+import sys, os
+sys.path.insert(0, os.path.expanduser('$INSTALL_DIR'))
+from mcp_server.config import create_api_key
+print(create_api_key('installer', neutron_root=os.path.expanduser('$INSTALL_DIR')))
+" 2>/dev/null || echo "")
+
+    if [[ -n "$API_KEY" ]]; then
+        success "API key generated"
+        echo ""
+        echo -e "${BOLD}⚠️  IMPORTANT — Save this API key (only shown once):${RESET}"
+        echo -e "  ${GREEN}$API_KEY${RESET}"
+        echo ""
+        echo "  Add to ~/.bashrc:"
+        echo "    export NEUTRON_API_KEY='$API_KEY'"
+        echo "    export NEUTRON_ROOT='$INSTALL_DIR'"
+    else
+        warn "API key not generated (run: neutron status to create)"
+    fi
 fi
 
-echo -e "${GREEN}[✓] Ready to build. ∫f(t)dt${RESET}"
+# ── 9. Summary ───────────────────────────────────────────────────────────
+section "Installation Complete ✓"
+
+echo ""
+success "NEUTRON EVO OS v4.3.1 installed to: $INSTALL_DIR"
+echo ""
+echo "  Quick start:"
+echo "    source ~/.bashrc  # or open new terminal"
+echo "    neutron status   # verify installation"
+echo "    neutron discover \"Build my project idea\""
+echo ""
+echo "  Docs:   $INSTALL_DIR/NEUTRON_CONTEXT.md"
+echo "  Memory: $INSTALL_DIR/memory/"
+echo "  Hooks:  ~/.claude/settings.json (SessionStart + PreToolUse)"
+echo ""

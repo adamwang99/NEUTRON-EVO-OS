@@ -5,7 +5,44 @@
 
 ---
 
-## [2026-04-05] Bug: Observer scan parent directory — bleed into sibling projects
+## [2026-04-07] Bug: SessionStart hook FD deadlock — every session exit 1
+
+- **Symptom:** Every Claude Code session showed "SessionStart: startup hook error" even
+  though the hook script completed its work. Exit code was 1.
+- **Root cause:** `session-start.sh` line 81 opened FD 200 in the **parent** shell
+  (`exec 200>"$GC_LOCK"`) before the subshell that calls `flock -n 200`. Since the
+  parent held the FD open, `flock -n 200` inside the subshell always saw a conflicting
+  lock on the same FD and immediately failed. The subshell exited 1, propagating to
+  the whole script.
+- **Fix:** Moved FD 200 entirely inside the subshell. The subshell now holds the lock
+  exclusively for its lifetime; the parent never holds it open. Parent's exit code
+  reflects subshell's success.
+  - `hooks/session-start.sh:78-103`: Restructured GC flock block so the subshell
+    acquires and releases the lock, not the parent.
+- **Tags:** `#hook` `#flock` `#fd-leak`
+- **Lesson:** `flock -n` inside a subshell cannot succeed if the parent has the same FD
+  open. Always keep the FD acquisition inside the subshell that needs the lock.
+
+---
+
+## [2026-04-07] Enhancement: install.sh — add mcpServers for new users
+
+- **Symptom:** New users running `install.sh` got hooks configured but no `mcpServers`
+  entry. MCP tools (neutron_memory, neutron_workflow, etc.) silently failed with
+  "No module named mcp_server" when Claude Code started in any project directory.
+- **Root cause:** `install.sh` step 6 only wrote `hooks` to `settings.json`, omitting
+  the `mcpServers` block. Users had to manually add the MCP server config.
+- **Fix:** Added MCP server registration in `install.sh` step 6 — `setdefault("mcpServers", {})`
+  merge preserves any existing MCP servers the user already has. `NEUTRON_ROOT` is set
+  to the dynamic `install_dir`, not hardcoded.
+  - `install.sh:244-266`: `settings.setdefault("mcpServers", {})["neutron-evo-os"] = _mcp_config`
+- **Tags:** `#packaging` `#mcp` `#install`
+- **Lesson:** Every capability the installer enables must be registered in settings.json,
+  not assumed to be handled by the user's existing config.
+
+---
+
+ — bleed into sibling projects
 
 - **Symptom:** Opening a project in a subdirectory caused Claude Code to scan the root
   directory and process sibling projects.
