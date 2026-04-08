@@ -445,7 +445,7 @@ def run_orchestration(task: str, context: dict = None) -> dict:
             "ci_delta": 0,
         }
 
-    # ── EXECUTE: Spawn agents via Agent tool ──────────────────────────────────
+    # ── EXECUTE: Spawn agents via Claude Agent SDK — TRUE parallel ────────────
     elif phase == "execute":
         units = state.get("units", [])
         task_text = state.get("task", task)
@@ -463,7 +463,6 @@ def run_orchestration(task: str, context: dict = None) -> dict:
                 isolation=True,
             )
             agent_configs.append(cfg)
-            # Mark unit as running
             u["status"] = "running"
 
         state["phase"] = "execute"
@@ -472,54 +471,73 @@ def run_orchestration(task: str, context: dict = None) -> dict:
         state["started_at"] = datetime.now().isoformat()
         _save_state(state)
 
-        # ── Build agent tool invocation block ───────────────────────────────
-        # Each cfg can be called as: Agent(prompt=cfg["prompt"], agent=cfg["agent"], ...)
-        tool_calls = []
-        for cfg in agent_configs:
-            bg = cfg["background"]
-            mode = "background (concurrent)" if bg else "foreground (blocking)"
-            tool_calls.append(
-                f"\n# ══ {cfg['unit_id']}: {cfg['unit_name']} ═════════════════════════"
-                f"\n# Mode: {mode} | Est: ~{cfg['estimated_minutes']} min | Scope: {cfg['scope']}"
-                f"\n# Skills preloaded: {', '.join(cfg['skills'])}"
-                f"\nAgent("
-                f"\n    prompt={_repr_long(cfg['prompt'], indent=8)},"
-                f"\n    agent=\"{cfg['agent']}\","
-                f"\n    background={bg},"
-                f"\n    maxTurns={cfg['max_turns']},"
-                f"\n    isolation=\"{cfg['isolation']}\","
-                f"\n    skills={cfg['skills']},"
-                f"\n)"
-            )
+        # ── TRUE PARALLEL SPAWN via orchestration_spawn ───────────────────
+        # Import here to avoid circular deps at module load time
+        try:
+            from engine.orchestration_spawn import spawn_parallel_agents
+            spawner_available = True
+        except ImportError:
+            spawner_available = False
 
-        tool_block = "\n".join(tool_calls)
+        if spawner_available:
+            # Actually spawn agents in parallel — no text generation
+            agent_results = spawn_parallel_agents(agent_configs)
+            # Store results and auto-advance to merge
+            state["agent_results"] = {
+                r["agent_id"]: r for r in agent_results
+            }
+            _save_state(state)
+            # Auto-advance to merge
+            return run_orchestration(task, {"phase": "merge"})
+        else:
+            # Fallback: return text configs for manual spawning
+            # (only when claude-agent-sdk is not installed)
+            tool_calls = []
+            for cfg in agent_configs:
+                bg = cfg["background"]
+                mode = "background (concurrent)" if bg else "foreground (blocking)"
+                tool_calls.append(
+                    f"\n# ══ {cfg['unit_id']}: {cfg['unit_name']} ═════════════════════════"
+                    f"\n# Mode: {mode} | Est: ~{cfg['estimated_minutes']} min | Scope: {cfg['scope']}"
+                    f"\n# Skills preloaded: {', '.join(cfg['skills'])}"
+                    f"\nAgent("
+                    f"\n    prompt={_repr_long(cfg['prompt'], indent=8)},"
+                    f"\n    agent=\"{cfg['agent']}\","
+                    f"\n    background={bg},"
+                    f"\n    maxTurns={cfg['max_turns']},"
+                    f"\n    isolation=\"{cfg['isolation']}\","
+                    f"\n    skills={cfg['skills']},"
+                    f"\n)"
+                )
 
-        return {
-            "status": "ready_to_spawn",
-            "output": (
-                f"🔄 {len(agent_configs)} agent configs built — SPAWNING NOW.\n\n"
-                f"Launch {len(agent_configs)} agents in parallel:\n"
-                f"{tool_block}\n\n"
-                "HOW TO SPAWN:\n"
-                "  - For each Agent(...) above: copy the config and call it\n"
-                "  - Background agents: set background=True → they run concurrently\n"
-                "  - Foreground agents: set background=False → block until done\n"
-                "  - After ALL agents finish: call run_orchestration(task, {'phase': 'merge'})\n\n"
-                "PROGRESS TRACKING:\n"
-                "  - Call run_orchestration(task, {'phase': 'update', 'unit_id': 'UNIT-1', 'result': <result>})\n"
-                "  - After last agent completes → merge phase\n"
-            ),
-            "agent_configs": agent_configs,
-            "unit_count": len(agent_configs),
-            "tool_block": tool_block,
-            "spawn_instructions": {
-                "step": "Call Agent() for each config above with the exact parameters shown",
-                "wait_for": "ALL agents to complete",
-                "then": "run_orchestration(task, {'phase': 'merge'})",
-            },
-            "next_phase": "merge",
-            "ci_delta": 0,
-        }
+            tool_block = "\n".join(tool_calls)
+
+            return {
+                "status": "ready_to_spawn",
+                "output": (
+                    f"🔄 {len(agent_configs)} agent configs built — SPAWNING NOW.\n\n"
+                    f"Launch {len(agent_configs)} agents in parallel:\n"
+                    f"{tool_block}\n\n"
+                    "HOW TO SPAWN:\n"
+                    "  - For each Agent(...) above: copy the config and call it\n"
+                    "  - Background agents: set background=True → they run concurrently\n"
+                    "  - Foreground agents: set background=False → block until done\n"
+                    "  - After ALL agents finish: call run_orchestration(task, {'phase': 'merge'})\n\n"
+                    "PROGRESS TRACKING:\n"
+                    "  - Call run_orchestration(task, {'phase': 'update', 'unit_id': 'UNIT-1', 'result': <result>})\n"
+                    "  - After last agent completes → merge phase\n"
+                ),
+                "agent_configs": agent_configs,
+                "unit_count": len(agent_configs),
+                "tool_block": tool_block,
+                "spawn_instructions": {
+                    "step": "Call Agent() for each config above with the exact parameters shown",
+                    "wait_for": "ALL agents to complete",
+                    "then": "run_orchestration(task, {'phase': 'merge'})",
+                },
+                "next_phase": "merge",
+                "ci_delta": 0,
+            }
 
     # ── UPDATE: Record agent completion ──────────────────────────────────────
     elif phase == "update":

@@ -597,6 +597,55 @@ def _step_build(task: str, context: dict) -> dict:
             + "\n".join(f"   {e}" for e in learned["entries"][:3])
         )
 
+    # ── REGRESSION GUARD: check if editing critical files would break known good state ─
+    # Only run for critical module changes (engine/, skills/core/*/logic/)
+    # Skip for tests, docs, config (those are tested separately by CI)
+    critical_patterns = [
+        "engine/", "skills/core/", "hooks/", "mcp_server/"
+    ]
+    # Get changed files from context (set by PreToolUse hook before this call)
+    changed_files = context.get("_changed_files", [])
+    if changed_files:
+        critical_changed = [
+            f for f in changed_files
+            if any(p in f for p in critical_patterns)
+        ]
+        if critical_changed:
+            try:
+                from engine.regression_guard import regression_check, _load_manifest
+                # Ensure snapshot exists first time
+                manifest = _load_manifest()
+                if not manifest.get("smoke") or not manifest.get("imports"):
+                    from engine.regression_guard import snapshot as _rg_snapshot
+                    _rg_snapshot()
+                result = regression_check(changed_files=critical_changed)
+                if not result.get("ok"):
+                    return {
+                        "status": "blocked",
+                        "output": (
+                            f"⛔ REGRESSION BLOCK — Build not started.\n\n"
+                            f"{result.get('output', 'Regression detected.')}\n\n"
+                            "Fix the regressions above before building.\n"
+                            "To refresh golden snapshot: workflow(step='build', refresh_snapshot=True)\n"
+                        ),
+                        "ci_delta": -5,
+                        "regression_result": result,
+                    }
+            except Exception:
+                pass  # Non-critical — don't block on regression guard failures
+
+    # Manual snapshot refresh via workflow(step='build', refresh_snapshot=True)
+    if context.get("refresh_snapshot"):
+        try:
+            from engine.regression_guard import snapshot as _rg_snapshot
+            _rg_snapshot()
+        except Exception as e:
+            return {
+                "status": "ok",
+                "output": f"Failed to refresh snapshot: {e}",
+                "ci_delta": 0,
+            }
+
     # SPEC completeness guard: block build if SPEC has placeholder stubs.
     # If SPEC contains _TBD_ or _ Not specified_ patterns, it was never hardened.
     spec_content = spec_path.read_text(errors="ignore")

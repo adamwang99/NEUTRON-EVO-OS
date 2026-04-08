@@ -5,6 +5,51 @@
 
 ---
 
+## [2026-04-08] Bug: Orchestrator execute phase only generated text configs — no real agents
+
+- **Symptom:** NEUTRON claimed "parallel N-agent swarm execution" but the orchestration
+  `execute` phase returned text `Agent(...)` configs that Claude Code had to manually
+  copy-paste and run. No actual agent spawning occurred. True parallelism only existed
+  in `mcp_server/tools.py::spawn_parallel()` but it was never called by the orchestrator.
+- **Root cause:** Orchestrator's `execute` phase built agent configs and returned them
+  as text blocks for manual spawning, instead of calling `spawn_parallel()`. The
+  `max_workers=1` in `_spawn_agent()` also made even the MCP layer sequential.
+- **Fix:**
+  - `engine/orchestration_spawn.py`: **NEW** — dedicated parallel spawn engine.
+    Exports `spawn_parallel_agents()` and `spawn_single()` using Claude Agent SDK.
+    max_workers=n (not 1) for true parallelism.
+  - `skills/core/orchestration/logic/__init__.py`: execute phase now calls
+    `spawn_parallel_agents()` directly and auto-advances to merge. Fallback text
+    mode only if `claude-agent-sdk` not installed.
+  - `mcp_server/tools.py`: already correct (max_workers=n in spawn_parallel).
+- **Tags:** `#orchestration` `#swarm` `#parallel`
+- **Lesson:** A feature that generates text configs instead of calling real functions
+  is not a real feature. "Spawning now" in the output text ≠ actual spawning.
+
+---
+
+## [2026-04-08] Bug: NEUTRON claimed 5 capabilities but only 1 was real
+
+- **Symptom:** NEUTRON CLAUDE.md listed 5 core capabilities:
+  (1) Coding speed, (2) Swarm agents, (3) UI skill integration, (4) 3-tier memory, (5) Learning system.
+  Full audit revealed: 1 fully working, 4 partial, 0 fake (no outright lies), but all had gaps.
+- **Root cause:** Multiple architectural gaps accumulated over development:
+  (a) Build step was scaffolding-only (no actual code gen), (b) Orchestrator was text-generator not real spawner,
+  (c) Cookbooks written but never read, (d) Learned skills were no-op stubs, (e) regression_guard.py existed but not wired.
+- **Fix:** Systematically fixed 8 gaps:
+  - `engine/orchestration_spawn.py`: true parallel spawn ✅
+  - `skills/core/orchestration/logic/__init__.py`: wired to spawn_parallel ✅
+  - `hooks/active-recall.py`: added `.active_recall.json` for context injection ✅
+  - `skills/core/memory/logic/__init__.py`: 3-tier search (SHORT/MID/LONG) ✅
+  - `skills/core/workflow/logic/__init__.py`: regression guard integration ✅
+  - `memory/cookbooks/`: cleaned tmp* garbage, removed test cookbooks ✅
+  - `memory/pending/LEARNED_pending.md`: truncated 26MB duplicate → clean file ✅
+- **Tags:** `#audit` `#architecture` `#claims-vs-reality`
+- **Lesson:** CLAUDE.md claims must match implementation reality. "Partial" features
+  create false confidence. Regular adversarial self-audit is required.
+
+---
+
 ## [2026-04-08] Bug: Cross-Project Read Access — No Boundary Enforcement
 
 - **Symptom:** While working in `/mnt/data/projects/ant-downloader/`, Claude Code

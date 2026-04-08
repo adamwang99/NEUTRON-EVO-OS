@@ -135,21 +135,81 @@ def _archive_file(context: dict) -> dict:
 
 
 def _search_memories(context: dict) -> dict:
+    """
+    Search across all 3 memory tiers.
+    Tiers:
+      SHORT  = memory/YYYY-MM-DD.md  (daily session logs)
+      MID    = memory/cookbooks/*.md  (Dream Cycle cookbooks)
+      LONG   = memory/LEARNED.md     (bug fixes & patterns)
+
+    The search is NOT tier-aware by default (searches all 3).
+    Use context["tier"] to restrict: "short", "mid", "long", or "all".
+    """
     query = context.get("query", "")
+    tier = context.get("tier", "all").lower()
     if not query:
         return {"status": "error", "output": "query required in context", "ci_delta": 0}
+
+    COOKBOOK_DIR = MEMORY_DIR / "cookbooks"
+    LEARNED_PATH = MEMORY_DIR / "LEARNED.md"
+
+    def _tier_match(path: Path) -> bool:
+        """Return True if path belongs to the requested tier."""
+        if tier == "all":
+            return True
+        if tier == "short":
+            return path.parent == MEMORY_DIR and path.name != "LEARNED.md"
+        if tier == "mid":
+            return COOKBOOK_DIR in path.parents or path.parent == COOKBOOK_DIR
+        if tier == "long":
+            return path == LEARNED_PATH
+        return True
+
+    def _tier_label(path: Path) -> str:
+        if COOKBOOK_DIR in path.parents or path.parent == COOKBOOK_DIR:
+            return "MID"
+        if path == LEARNED_PATH:
+            return "LONG"
+        return "SHORT"
+
     results = []
     if MEMORY_DIR.exists():
-        for md in MEMORY_DIR.rglob("*.md"):
+        for md in sorted(MEMORY_DIR.rglob("*.md"), key=lambda p: p.stat().st_mtime, reverse=True):
+            if not _tier_match(md):
+                continue
             try:
-                if query.lower() in md.read_text(errors="ignore").lower():
-                    results.append(str(md.relative_to(_NEUTRON_ROOT)))
+                content = md.read_text(errors="ignore")
+                if query.lower() in content.lower():
+                    tier_label = _tier_label(md)
+                    rel = str(md.relative_to(_NEUTRON_ROOT))
+                    # Snippet: show first 200 chars around match
+                    idx = content.lower().find(query.lower())
+                    snippet = content[max(0, idx - 100):idx + 200].replace("\n", " ").strip()
+                    results.append({
+                        "path": rel,
+                        "tier": tier_label,
+                        "snippet": snippet[:200],
+                        "match_count": content.lower().count(query.lower()),
+                    })
             except Exception:
                 continue
+
+    results_text = ""
+    if tier != "all":
+        results_text += f"[{tier.upper()} tier] "
+    results_text += f"{len(results)} match(es) for '{query}':\n"
+    for r in results[:10]:  # cap at 10
+        results_text += f"  [{r['tier']}] {r['path']} ({r['match_count']}x)\n"
+        results_text += f"    → {r['snippet'][:150]}\n"
+
+    if len(results) > 10:
+        results_text += f"  ... and {len(results) - 10} more\n"
+
     return {
         "status": "ok",
-        "output": f"Found {len(results)} match(es) for '{query}'",
+        "output": results_text,
         "results": results,
+        "tier": tier,
         "ci_delta": 0,
     }
 
