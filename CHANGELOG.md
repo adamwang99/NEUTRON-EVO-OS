@@ -4,6 +4,38 @@ All notable changes are documented here. The format follows [Keep a Changelog](h
 
 ---
 
+## [4.5.4] — 2026-04-08 — Intelligence Layer: Active Recall + Self-Evolution
+
+### Active Recall — LEARNED Enforcement (Passive → Active)
+
+- **`hooks/active-recall.py`**: NEW — PreToolUse Python script. Extracts keywords from
+  file path being modified → searches memory/LEARNED.md → outputs warnings to stderr.
+  Claude Code shows warnings BEFORE writing. Root-causes surfaced automatically.
+- **`hooks/pretool-backup.sh`**: Added Phase 0 → calls active-recall.py before
+  every file Edit/Write. LEARNED enforcement now happens at write-time, not post-commit.
+- **Effect**: Before touching `engine/user_decisions.py` → sees filelock bugs.
+  Before touching `session-start.sh` → sees FD deadlock bugs. No more blind repeats.
+
+### Auto-Evolution — Decisions + Quality Tracking
+
+- **`.pre-commit/auto-decision.py`**: NEW — Auto-records tech choices from commit
+  messages to user_decisions.json. No user action needed. Deduped by (type, area)
+  per 10-minute window. Infers area from file paths. Records: feat/fix/docs/chore/test.
+- **`.pre-commit/test-quality.py`**: NEW — Records quality signals after pytest.
+  Signals: pytest pass=+1, test files written=+1, fix+pass=+2. Rolling score
+  in memory/.quality_history.json. Quality trend visible in /audit.
+- **`engine/dream_engine.py`**: Added `_rule_based_distill()` — AI-free fallback
+  when ANTHROPIC_API_KEY unavailable. Uses regex heuristics to extract error/decision
+  patterns. Cookbooks still written. Dream Cycle now useful without API key.
+
+### Housekeeping
+
+- `.pre-commit-config.yaml`: Added `auto-decision` and `test-quality` hooks
+- `engine/dream_engine.py`: AI fallback → `used_ai: false`, rule-based distills used
+- `memory/LEARNED.md`: Added entry for active recall enhancement
+
+---
+
 ## [4.5.3] — 2026-04-08 — Audit Fixes: Decisions + Archive Policy
 
 ### P0 — Shipments & Decisions Recording

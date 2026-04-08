@@ -106,6 +106,13 @@ if [ -f "$FILEPATH" ]; then
     fi
 fi
 
+# ── Phase 0: ACTIVE RECALL — grep LEARNED.md for relevant bugs ──────────────
+# active-recall.py searches memory/LEARNED.md for bug patterns related to the file.
+# Warnings go to stderr so Claude Code shows them in the transcript BEFORE writing.
+if [ -f "$NEUTRON_ROOT/hooks/active-recall.py" ]; then
+    python3 "$NEUTRON_ROOT/hooks/active-recall.py" "$FILEPATH" 2>&1 || true
+fi
+
 # ── Phase 2: Regression smoke test ONLY for NEUTRON engine code ─────────────
 REL_PATH="${FILEPATH#$NEUTRON_ROOT/}"
 case "$REL_PATH" in

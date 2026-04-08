@@ -347,3 +347,28 @@ When you fix a bug or discover a pattern:
 - **Lesson:** Any side-effect function (writes to disk, state files) needs a
   test-mode guard. conftest.py's `NEUTRON_DREAM_TEST` must be respected
   by ALL state-writing functions, not just dream_engine.
+
+---
+
+## [2026-04-08] Enhancement: Active Recall — PreToolUse LEARNED enforcement
+
+- **Symptom:** LEARNED.md existed but was never read before coding. Same bugs repeated
+  across sessions. 4 known bugs in LEARNED appeared again during audit despite being recorded.
+- **Root cause:** RECALL was passive — session-start.sh wrote LEARNED entries to
+  .claude/CLAUDE.md but nothing BANNED coding without checking them.
+- **Fix:**
+  - `hooks/active-recall.py`: PreToolUse Python script that extracts keywords from
+    file path, searches LEARNED.md for relevant bugs, outputs warnings to stderr.
+  - `hooks/pretool-backup.sh`: Added Phase 0 → calls active-recall.py BEFORE every
+    file write. Warnings shown in Claude Code transcript before code is written.
+  - `.pre-commit/auto-decision.py`: Auto-records tech choices from commit messages
+    → user_decisions.json. No user action needed. Debounced 10min per (type, area).
+  - `.pre-commit/test-quality.py`: Records quality signals after each pytest run
+    → .quality_history.json. Signals: pytest pass=+1, test files written=+1,
+    fix+pass=+2. Rolling score shows quality trend.
+  - `engine/dream_engine.py`: Added `_rule_based_distill()` — AI-free fallback
+    for Dream Cycle when ANTHROPIC_API_KEY unavailable. Uses regex heuristics
+    to extract error/decision/pattern signals. Cookbooks still written.
+- **Tags:** `#hook` `#memory` `#automation` `#learned` `#workflow`
+- **Lesson:** Passive RECALL doesn't work. Active enforcement via PreToolUse
+  + pre-commit is required to change developer behavior.

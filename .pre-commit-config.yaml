@@ -14,6 +14,24 @@ repos:
         stages: [pre-commit]
         fail_fast: true
 
+      - id: test-quality
+        name: Record quality signal (non-blocking)
+        entry: python3 .pre-commit/test-quality.py
+        language: system
+        pass_filenames: true
+        always_run: true
+        stages: [pre-commit]
+        # Runs after pytest. Records quality signal → .quality_history.json.
+        # NEVER blocks — even if pytest fails, this still records the signal.
+
+      - id: auto-decision
+        name: Auto-record tech decision
+        entry: python3 .pre-commit/auto-decision.py
+        language: system
+        pass_filenames: true
+        always_run: false
+        stages: [pre-commit]
+
       - id: no-credentials
         name: Check no credentials in commits
         entry: python3 .pre-commit/check-credentials.py

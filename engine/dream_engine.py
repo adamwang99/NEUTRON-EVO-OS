@@ -180,6 +180,153 @@ def _pre_filter(content: str) -> tuple[str, dict]:
     return "\n".join(filtered), stats
 
 
+# ── Rule-Based Distill (AI-free fallback) ───────────────────────────────────
+
+def _rule_based_distill(filtered_by_date: dict[str, tuple[str, dict]]) -> dict:
+    """
+    Extract patterns from session logs WITHOUT AI.
+
+    This is the AI-free fallback when ANTHROPIC_API_KEY is not set.
+    Uses heuristics to find:
+    - Error patterns (tracebacks, exceptions, crashes)
+    - Decision patterns (chose, decided, approved, rejected)
+    - First-time patterns (new files, new imports, new patterns)
+    - Quality patterns (test failures, regressions)
+
+    Returns the same structure as _call_claude_analysis() so the rest
+    of the pipeline (cookbook writing, LEARNED pending) works identically.
+    """
+    sig_events: list[dict] = []
+    cookbook_sections: list[dict] = []
+    learned_drafts: list[dict] = []
+
+    ERROR_PATTERNS = [
+        (re.compile(r"(?i)error:|exception:|traceback|failed:|crash|panic", re.M), "error"),
+        (re.compile(r"(?i)timeout|deadlock|race condition", re.M), "concurrency"),
+        (re.compile(r"(?i)memory leak|leak", re.M), "memory"),
+        (re.compile(r"(?i)import.*error|modulenotfound|no module|nomodule", re.M), "import"),
+        (re.compile(r"(?i)syntaxerror|parse error|jsondecodeerror", re.M), "parse"),
+        (re.compile(r"(?i)filelock|lock.*timeout|deadlock", re.M), "concurrency"),
+    ]
+
+    DECISION_PATTERNS = [
+        (re.compile(r"(?i)chose|selected|decided|approved|rejected|picked|preferred", re.M), "decision"),
+        (re.compile(r"(?i)instead of|rather than|switched from|replaced with", re.M), "decision"),
+        (re.compile(r"(?i)because|reason: rationale:", re.M), "reasoning"),
+    ]
+
+    FIRST_TIME_PATTERNS = [
+        re.compile(r"(?i)first time|initial|new file|new module|new skill|new hook"),
+        re.compile(r"(?i)created|wrote|added.*new"),
+    ]
+
+    FILES_TOUCHED: set[str] = set()
+
+    for date, (content, _stats) in filtered_by_date.items():
+        lines = content.splitlines()
+
+        for i, line in enumerate(lines):
+            stripped = line.strip()
+
+            # Skip absolute noise
+            if _is_noise(stripped):
+                continue
+
+            # Skip generic info / short lines
+            if len(stripped) < 15:
+                continue
+
+            # Track files mentioned
+            for m in re.finditer(r"(?:engine|skills|mcp_server|hooks)/[\w/]+\.(?:py|sh|md|json)", stripped):
+                FILES_TOUCHED.add(m.group())
+
+            # Error events — must have specific context
+            matched = False
+            for pat, err_type in ERROR_PATTERNS:
+                if pat.search(stripped):
+                    # Must have file:line context OR specific error indicators
+                    has_context = (
+                        re.search(r"[\w/]+\.(?:py|sh|md|json)[:\s]+(?:line\s+)?\d+", stripped) or
+                        re.search(r"(?:Error|Exception|Failed|Crash|Timeout|Traceback)", stripped, re.IGNORECASE)
+                    )
+                    if has_context:
+                        ctx_m = re.search(r"([\w/]+\.(?:py|sh|md|json))[:,\s]+(?:line\s+)?(\d+)", stripped)
+                        ctx = f"{ctx_m.group(1)}:{ctx_m.group(2)}" if ctx_m else stripped[:80]
+                        severity = "high" if any(k in stripped.lower() for k in ["crash", "fatal", "deadlock"]) else "medium"
+                        sig_events.append({
+                            "type": "error",
+                            "summary": f"{err_type.upper()}: {stripped[:80]}",
+                            "context": ctx,
+                            "severity": severity,
+                            "raw_snippets": [stripped[:120]],
+                            "_date": date,
+                        })
+                        # Draft LEARNED entry
+                        learned_drafts.append({
+                            "title": f"{err_type} in session {date}",
+                            "symptom": stripped[:200],
+                            "root_cause": "See context in session log",
+                            "fix": "Review session log for details",
+                            "tags": f"#{err_type}",
+                            "_date": date,
+                        })
+                        matched = True
+                        break
+
+            if matched:
+                continue
+
+            # Decision events — must have meaningful rationale
+            for pat, dec_type in DECISION_PATTERNS:
+                if pat.search(stripped) and len(stripped) > 25:
+                    sig_events.append({
+                        "type": "decision",
+                        "summary": stripped[:100],
+                        "context": stripped[:200],
+                        "severity": "medium",
+                        "raw_snippets": [stripped[:120]],
+                        "_date": date,
+                    })
+                    cookbook_sections.append({
+                        "title": f"Decision: {stripped[:60]}",
+                        "trigger": f"Occurred during {date} session",
+                        "recognition": stripped[:200],
+                        "resolution": "Recorded in session log",
+                        "prevention": "Document decision rationale in user_decisions.json",
+                        "related_events": [],
+                    })
+                    break
+
+    # Deduplicate: same error type + similar text → merge
+    deduped_events = {}
+    for event in sig_events:
+        key = (event["type"], event["summary"][:40])
+        if key not in deduped_events:
+            deduped_events[key] = event
+
+    deduped_cookbooks = {}
+    for section in cookbook_sections:
+        key = section["title"][:40]
+        if key not in deduped_cookbooks:
+            deduped_cookbooks[key] = section
+
+    # Deduplicate drafts
+    deduped_drafts = {}
+    for draft in learned_drafts:
+        key = (draft["title"][:40], draft.get("tags", ""))
+        if key not in deduped_drafts:
+            deduped_drafts[key] = draft
+
+    return {
+        "status": "rule_based",
+        "source": "rule_based_distill (AI-free)",
+        "significant_events": list(deduped_events.values())[:10],
+        "cookbook_sections": list(deduped_cookbooks.values())[:5],
+        "learned_drafts": list(deduped_drafts.values())[:5],
+        "files_touched": sorted(FILES_TOUCHED)[:20],
+    }
+
+
 # ── AI Analysis via Claude API ──────────────────────────────────────────────
 
 def _call_claude_analysis(filtered_log: str, learned_content: str = "") -> dict:
@@ -524,11 +671,12 @@ def _dream_cycle_inner() -> dict:
     learned_path = MEMORY_DIR / "LEARNED.md"
     existing_learned = learned_path.read_text() if learned_path.exists() else ""
 
-    # Call AI on each day's filtered log
+    # Call AI on each day's filtered log (falls back to rule-based if AI unavailable)
     all_sig_events: list[dict] = []
     all_cookbook_sections: list[dict] = []
     all_learned_drafts: list[dict] = []
     ai_errors: list[str] = []
+    used_ai = False
 
     for date, (filtered, stats) in filtered_by_date.items():
         if not filtered.strip():
@@ -537,8 +685,15 @@ def _dream_cycle_inner() -> dict:
         ai_result = _call_claude_analysis(filtered, learned_content=existing_learned)
 
         if ai_result.get("status") == "error":
-            ai_errors.append(f"{date}: {ai_result.get('message', 'unknown')}")
-            continue
+            # ── AI fallback: use rule-based distill ───────────────────────────
+            # This runs WITHOUT ANTHROPIC_API_KEY. Extracts error/decision/pattern
+            # signals using regex heuristics. Cookbooks still get written.
+            ai_errors.append(f"{date}: {ai_result.get('message', 'unknown')} — using rule-based distill")
+            fallback = _rule_based_distill({date: (filtered, stats)})
+            ai_result = fallback
+            used_ai = False
+        else:
+            used_ai = True
 
         # Write cookbook for this day
         log_name = date
@@ -682,6 +837,7 @@ def _dream_cycle_inner() -> dict:
         "significant_events": len(all_sig_events),
         "cookbook_patterns": len(all_cookbook_sections),
         "ai_errors": ai_errors,
+        "used_ai": used_ai,
     }
 
 
