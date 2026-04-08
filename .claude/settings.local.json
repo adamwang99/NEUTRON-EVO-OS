@@ -1,7 +1,11 @@
 {
   "permissions": {
     "allow": [
-      "Bash(pip install:*)"
+      "Bash(pip install:*)",
+      "mcp__neutron-evo-os__neutron_audit",
+      "mcp__neutron-evo-os__neutron_memory",
+      "mcp__neutron-evo-os__neutron_context",
+      "mcp__neutron-evo-os__neutron_checkpoint"
     ]
   }
 }

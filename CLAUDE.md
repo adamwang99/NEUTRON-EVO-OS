@@ -37,7 +37,7 @@ See `NEUTRON_CONTEXT.md` for the full system context.
 ## Known Issues
 
 - **Dream Cycle AI**: Requires `ANTHROPIC_API_KEY` env var (Anthropic format). Non-AI phases work without it.
-- **Directory boundary**: Observer and GC scoped to project root only.
+- **Directory boundary**: Read/Glob/Grep blocked outside project root via `pretool-guard.sh`. Observer and GC scoped to project root only.
 - **PreLoadMemory**: Not a valid hook. Use SessionStart instead.
 - Legacy docs archived to `memory/archived/`.
 

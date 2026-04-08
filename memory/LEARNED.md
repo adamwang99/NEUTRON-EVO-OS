@@ -5,6 +5,39 @@
 
 ---
 
+## [2026-04-08] Bug: Cross-Project Read Access — No Boundary Enforcement
+
+- **Symptom:** While working in `/mnt/data/projects/ant-downloader/`, Claude Code
+  read files from `/mnt/data/projects/octa/` (cross-project boundary breach):
+  `octa/memory/LEARNED.md`, `octa/server/backtest/backtestEngine.ts`, etc.
+  Neither `ant-downloader` nor `octa` has NEUTRON EVO OS installed — the breach
+  came from Claude Code's own Read tool.
+- **Root cause:** NEUTRON EVO OS had **zero enforcement** on Read/Glob/Grep
+  operations. The system only protected Write/Edit via `pretool-backup.sh` (PreToolUse
+  hook with `matcher: "Edit|Write"`). Read/Glob/Grep were completely ungoverned.
+  No settings.json path deny rules existed. CLAUDE.md boundary directives were
+  advisory only.
+- **Fix:**
+  1. `hooks/pretool-guard.sh`: **NEW** — PreToolUse hook for Read/Glob/Grep.
+     Validates absolute paths stay within CWD or NEUTRON_ROOT. Blocks with
+     clear error + MCP tool suggestions.
+  2. `~/.claude/settings.json`: Added PreToolUse hook entry for `Read|Glob|Grep`
+     → `pretool-guard.sh`. Guards now active system-wide.
+  3. `engine/path_validation.py`: **NEW** — Python boundary utility. Exports
+     `enforce_boundary()`, `check_boundary()`, `BoundaryViolation`. Importable
+     by all skills.
+  4. All project CLAUDE.md files updated: `ant-downloader/`, `octa/`, `Web2md/`,
+     `ai-context-master/` (hub) — added "Directory Boundary" section.
+  5. `memory/pending/`: Cleaned 49 garbage tmp* files (~600MB), kept LEARNED_pending.md.
+- **Tags:** `#boundary` `#security` `#pretool` `#hook`
+- **Lesson:** CLAUDE.md directives are advisory, not enforced. A real security
+  boundary requires a PreToolUse hook that fires on Read/Glob/Grep, not just
+  Edit/Write. The lesson from yesterday's `_record_decision` guard (NEUTRON_DREAM_TEST=1)
+  applies here too: any side-effect or access operation needs an active guard.
+> ∫f(t)dt — Functional Credibility Over Institutional Inertia
+
+---
+
 ## [2026-04-07] Bug: ((OK++)) with set -e causes silent exit 1
 
 - **Symptom:** `install.sh` ran every step successfully but always exited with code 1
