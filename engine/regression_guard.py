@@ -43,9 +43,13 @@ GUARD_LOG = GUARD_DIR / "regression_log.md"
 SMOKE_TESTS = [
     ("context", "audit context", {"action": "audit"}),
     ("engine", "audit", {"action": "audit"}),
+    # Workflow is critical — any change to logic/__init__.py can break
+    # SPEC approval, decision recording, or shipment tracking
+    ("workflow", "system audit", {"step": "explore"}),
 ]
 
 # Modules that MUST import without error
+# IMPORTANT: Include skill logic modules so regressions there are caught
 CRITICAL_IMPORTS = [
     "engine.skill_execution",
     "engine.skill_registry",
@@ -56,6 +60,14 @@ CRITICAL_IMPORTS = [
     "engine.auto_confirm",
     "engine.dream_engine",
     "engine.smart_observer",
+    # Skill logic modules — critical for delivery pipeline
+    "skills.core.workflow.logic",
+    "skills.core.memory.logic",
+    "skills.core.context.logic",
+    "skills.core.engine.logic",
+    "skills.core.discovery.logic",
+    "skills.core.spec.logic",
+    "skills.core.acceptance_test.logic",
 ]
 
 
@@ -446,8 +458,9 @@ def _log_check(changed_modules: list[str], regressions: list, warnings: list,
     lock = filelock.FileLock(str(GUARD_LOCK), timeout=5)
     try:
         with lock:
-            content = GUARD_LOG.read_text() if GUARD_LOG.exists() else ""
-            GUARD_LOG.write_text(content + "\n".join(lines) + "\n")
+            existing = GUARD_LOG.read_text() if GUARD_LOG.exists() else ""
+            from engine._atomic import atomic_write as _aw
+            _aw(GUARD_LOG, existing + "\n".join(lines) + "\n")
     except Exception:
         pass  # Best-effort logging
 
