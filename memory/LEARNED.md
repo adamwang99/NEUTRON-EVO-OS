@@ -5,6 +5,30 @@
 
 ---
 
+## [2026-04-08] Bug: build-error-resolver had no auto-fix capability
+
+- **Symptom:** build-error-resolver skill parsed errors and generated suggestions, but
+  never applied anything automatically. Missing `pip install` packages required
+  manual copy-paste. Orchestrator couldn't parallelize error resolution.
+- **Root cause:** Parser only returned `suggested_fix` text. No confidence scoring,
+  no classification of fixable vs. review-requiring errors, no orchestrator integration.
+- **Fix:**
+  - `skills/core/build-error-resolver/logic/__init__.py`: Added `_generate_fix()` with
+    confidence scoring (0.3-0.98). HIGH (>=0.9): auto-apply. MEDIUM (0.6-0.9):
+    ready-to-apply. LOW (<0.6): suggestion only.
+  - Added `_apply_fix()`: runs `pip install` automatically for ModuleNotFoundError
+    (confidence 0.98), generates Python function stubs for NameError (0.92), runs
+    `go get` for Go undefined (0.85).
+  - Added orchestrator plan: groups errors by category, generates parallel fix units.
+  - Fixed: etype was not lowercased before comparison (etype="modulenotfounderror"
+    failed etype=="import" check → always fell to 0.3 confidence).
+  - Fixed: SyntaxWarning from raw `\w` in regex string (needed `r"..."`).
+- **Tags:** `#build-error` `#auto-fix` `#orchestration` `#confidence`
+- **Lesson:** Parser output types must match classifier input types. Any enum-like
+  string comparison needs a canonical form (lowercase) enforced at parse time.
+
+---
+
 ## [2026-04-08] Bug: Orchestrator execute phase only generated text configs — no real agents
 
 - **Symptom:** NEUTRON claimed "parallel N-agent swarm execution" but the orchestration
