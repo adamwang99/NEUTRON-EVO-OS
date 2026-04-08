@@ -381,6 +381,22 @@ def _spawn_agent(args: dict) -> dict:
     max_turns = args.get("max_turns", 50)
     cwd = args.get("cwd")
     env_extra = args.get("env", {})
+
+    # ── Validate cwd: must be inside NEUTRON_ROOT to prevent path traversal ──
+    try:
+        from mcp_server.http_transport import get_current_neutron_root
+        neutron_root = Path(str(get_current_neutron_root()))
+    except Exception:
+        neutron_root = _REPO_ROOT
+    if cwd:
+        try:
+            cwd_path = Path(cwd).resolve()
+            cwd_path.relative_to(neutron_root)
+            cwd = str(cwd_path)
+        except Exception:
+            cwd = str(neutron_root)  # fallback to safe default
+    else:
+        cwd = str(neutron_root)
     timeout_seconds = args.get("timeout_seconds", 300)
 
     if not prompt:

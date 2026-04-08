@@ -45,7 +45,7 @@ if [ ! -f "$FIRST_RUN_MARKER" ]; then
 
     echo ""
     echo "╔══════════════════════════════════════════════════════════╗"
-    echo "║  🟢 NEUTRON EVO OS v4.1.0 — First Time Setup Complete  ║"
+    echo "║  🟢 NEUTRON EVO OS v4.3.2 — First Time Setup Complete  ║"
     echo "╚══════════════════════════════════════════════════════════╝"
     echo ""
     echo "  ✅ Auto-confirm FULL enabled (all gates skipped)"
@@ -115,7 +115,7 @@ if [ ! -f "$DREAM_LOCK" ]; then
     SHOULD_RUN=0
     if [ -f "$DREAM_LAST" ]; then
         LAST_EPOCH=$(cat "$DREAM_LAST" 2>/dev/null)
-        if [ -n "$LAST_EPOCH" ] && [ -n "${LAST_EPOCH//[0-9]/}" ]; then
+        if [ -n "$LAST_EPOCH" ] && [ -z "${LAST_EPOCH//[0-9]/}" ]; then
             NOW_EPOCH=$(date +%s)
             HOURS_SINCE=$(( (NOW_EPOCH - LAST_EPOCH) / 3600 ))
             [ "$HOURS_SINCE" -ge 12 ] && SHOULD_RUN=1
@@ -158,7 +158,7 @@ nr = os.environ.get("NEUTRON_ROOT", os.getcwd())
 mem = os.path.join(nr, "memory")
 ctx = os.path.join(nr, ".claude", "CLAUDE.md")
 today = datetime.now()
-version = "v4.2.0-upgrade"
+version = "v4.3.2"
 lines = []
 
 lines.append(f"# Session Context — NEUTRON {version} — {today.strftime('%Y-%m-%d')}")
