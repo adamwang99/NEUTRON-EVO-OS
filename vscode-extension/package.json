@@ -1,8 +1,8 @@
 {
   "name": "neutron-evo-os",
   "displayName": "NEUTRON EVO OS",
-  "description": "NEUTRON EVO OS v4.1.0 — Sovereign Intelligence OS: auto-inject ∫f(t)dt context into every project, system-wide",
-  "version": "4.1.0",
+  "description": "NEUTRON EVO OS v4.3.2 — Sovereign Intelligence OS: auto-inject ∫f(t)dt context into every project, system-wide",
+  "version": "4.3.2",
   "icon": "icon.png",
   "publisher": "neutron-evo-os",
   "engines": {

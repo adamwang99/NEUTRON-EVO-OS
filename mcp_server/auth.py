@@ -35,6 +35,9 @@ _MAX_BUCKETS = 10_000   # hard cap — prevents unbounded memory growth
 _EVICTION_THRESHOLD = 1000  # trigger eviction every N calls
 
 
+_rate_limit_lock = threading.Lock()
+
+
 def _cleanup_expired_buckets(caller_tokens: float) -> None:
     """
     Remove rate-limit buckets that are empty and have been idle for >60 seconds.
@@ -54,7 +57,8 @@ def _cleanup_expired_buckets(caller_tokens: float) -> None:
 
 def reset_rate_limit(key: str):
     """Reset rate limit for a key (e.g., on violation)."""
-    _rate_buckets.pop(key, None)
+    with _rate_limit_lock:
+        _rate_buckets.pop(key, None)
 
 
 def check_rate_limit(api_key: str) -> tuple[bool, str]:
@@ -66,36 +70,38 @@ def check_rate_limit(api_key: str) -> tuple[bool, str]:
     rate = cfg.get_rate_limit(api_key)
 
     # Lazy eviction: clean up expired buckets every N calls to prevent unbounded growth
-    _eviction_counter += 1
-    if _eviction_counter >= _EVICTION_THRESHOLD:
-        _eviction_counter = 0
-        _cleanup_expired_buckets(0)
+    with _rate_limit_lock:
+        global _eviction_counter
+        _eviction_counter += 1
+        if _eviction_counter >= _EVICTION_THRESHOLD:
+            _eviction_counter = 0
+            _cleanup_expired_buckets(0)
 
     # Get or create bucket
-    if api_key not in _rate_buckets:
-        if len(_rate_buckets) >= _MAX_BUCKETS:
-            return False, "Rate limit table full — too many distinct keys"
-        _rate_buckets[api_key] = _RateBucket(tokens=rate, last_refill=time.time(), rate=rate)
+    with _rate_limit_lock:
+        if api_key not in _rate_buckets:
+            if len(_rate_buckets) >= _MAX_BUCKETS:
+                return False, "Rate limit table full — too many distinct keys"
+            _rate_buckets[api_key] = _RateBucket(tokens=rate, last_refill=time.time(), rate=rate)
 
-    bucket = _rate_buckets[api_key]
-    now = time.time()
-    elapsed = now - bucket.last_refill
+        bucket = _rate_buckets[api_key]
+        now = time.time()
+        elapsed = now - bucket.last_refill
+        # Refill tokens: rate per minute, prorated
+        refill = (elapsed / 60.0) * rate
+        bucket.tokens = min(rate, bucket.tokens + refill)
+        bucket.last_refill = now
 
-    # Refill tokens: rate per minute, prorated
-    refill = (elapsed / 60.0) * rate
-    bucket.tokens = min(rate, bucket.tokens + refill)
-    bucket.last_refill = now
-
-    if bucket.tokens >= 1:
-        bucket.tokens -= 1
-        return True, ""
-    else:
-        remaining = int(bucket.tokens)
-        retry_after = int((1 - bucket.tokens) / (rate / 60.0)) + 1
-        return False, (
-            f"Rate limit exceeded. {remaining} tokens left. "
-            f"Retry after {retry_after}s."
-        )
+        if bucket.tokens >= 1:
+            bucket.tokens -= 1
+            return True, ""
+        else:
+            remaining = int(bucket.tokens)
+            retry_after = int((1 - bucket.tokens) / (rate / 60.0)) + 1
+            return False, (
+                f"Rate limit exceeded. {remaining} tokens left. "
+                f"Retry after {retry_after}s."
+            )
 
 
 def resolve_neutron_root(api_key: str) -> str | None:

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ─────────────────────────────────────────────────────────────────────────────
-# NEUTRON EVO OS v4.3.1 — Global Installer
+# NEUTRON EVO OS v4.3.2 — Global Installer
 # Cross-platform: macOS, Linux, WSL
 # Purpose: Install NEUTRON to ~/.neutron-evo-os and propagate to all projects
 # Usage:   bash install-global.sh [--dir ~/.neutron-evo-os] [--skip-claude]
@@ -33,7 +33,7 @@ while [[ $# -gt 0 ]]; do
         --verbose)     VERBOSE=1; set -x; shift ;;
         --help|-h)
             cat << 'USAGE'
-NEUTRON EVO OS v4.3.1 — Global Installer
+NEUTRON EVO OS v4.3.2 — Global Installer
 
 Usage: install-global.sh [options]
   --dir DIR             Install to DIR (default: ~/.neutron-evo-os)
@@ -384,7 +384,7 @@ fi
 
 echo ""
 echo -e "${BOLD}╔══════════════════════════════════════════════════════════╗"
-echo "║         NEUTRON EVO OS v4.3.1 — INSTALL COMPLETE    ║"
+echo "║         NEUTRON EVO OS v4.3.2 — INSTALL COMPLETE    ║"
 echo "╚══════════════════════════════════════════════════════════╝${RESET}"
 echo ""
 echo "  Installed to: $INSTALL_DIR"

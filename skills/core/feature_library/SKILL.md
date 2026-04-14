@@ -4,7 +4,7 @@ type: core
 version: 1.0.0
 CI: 50
 dependencies: [context, workflow]
-last_dream: null
+last_dream: 2026-04-14
 ---
 
 ## Feature Library Skill — Pattern Router for Backend, API, Auth, and More

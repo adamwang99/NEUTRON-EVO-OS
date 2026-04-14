@@ -4,7 +4,7 @@ type: core
 version: 0.1.0
 CI: 50
 dependencies: []
-last_dream: 2026-04-05
+last_dream: 2026-04-14
 ---
 
 # Go Reviewer Skill

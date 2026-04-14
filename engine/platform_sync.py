@@ -512,7 +512,7 @@ def install_session_sync_hook(hook_dir: Path) -> None:
 # Runs at every Claude Code session start.
 # Reads NEUTRON_AUTO_CONFIRM from auto_confirm.json and syncs Claude settings.
 # ─────────────────────────────────────────────────────────────────────────────
-SCRIPT_DIR="$(cd "$(dirname "{{BASH_SOURCE[0]}}")" && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 NEUTRON_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 AUTO_CONFIRM_FILE="$NEUTRON_ROOT/memory/.auto_confirm.json"
 CLAUDE_SETTINGS="$HOME/.claude/settings.json"

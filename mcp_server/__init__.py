@@ -16,4 +16,4 @@ os.environ.setdefault("NEUTRON_ROOT", str(_NEUTRON_ROOT))
 if str(_NEUTRON_ROOT) not in sys.path:
     sys.path.insert(0, str(_NEUTRON_ROOT))
 
-__version__ = "4.1.0"
+__version__ = "4.3.2"

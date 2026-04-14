@@ -20,7 +20,12 @@ export NEUTRON_ROOT
 # Run only if NEUTRON_HUB is set and different from NEUTRON_ROOT.
 # nohup + disown: survives parent exit (atexit), continues in background.
 if [ -n "$NEUTRON_HUB" ] && [ "$NEUTRON_HUB" != "$NEUTRON_ROOT" ]; then
-    nohup bash -c "python3 -m neutron memory sync --hub '$NEUTRON_HUB'" 2>/dev/null &
+    nohup python3 -c "
+import subprocess, os
+hub = os.environ.get('NEUTRON_HUB', '')
+subprocess.run(['python3', '-m', 'neutron', 'memory', 'sync', '--hub', hub],
+              capture_output=True, timeout=60)
+" 2>/dev/null &
     disown
 fi
 
@@ -30,8 +35,8 @@ LAST_ACTIVITY_FILE="$NEUTRON_ROOT/memory/.last_activity"
 if [ -f "$LAST_ACTIVITY_FILE" ]; then
     LAST_TS=$(cat "$LAST_ACTIVITY_FILE" 2>/dev/null)
     if [ -n "$LAST_TS" ]; then
-        # Compute minutes since last activity using date arithmetic
-        LAST_EPOCH=$(date -d "$LAST_TS" +%s 2>/dev/null || echo 0)
+        # Compute minutes since last activity using Python (portable across Linux/macOS)
+        LAST_EPOCH=$(python3 -c "import sys, os; t=os.environ.get('LAST_TS',''); print(int(os.path.getmtime(t)) if t and os.path.exists(t) else 0)" LAST_TS="$LAST_TS" 2>/dev/null || echo 0)
         NOW_EPOCH=$(date +%s)
         MINUTES_SINCE=$(( (NOW_EPOCH - LAST_EPOCH) / 60 ))
         if [ "$MINUTES_SINCE" -ge 30 ]; then

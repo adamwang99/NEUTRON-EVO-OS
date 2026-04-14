@@ -4,7 +4,7 @@ type: core
 version: 1.0.0
 CI: 50
 dependencies: [discovery, ui_library, context]
-last_dream: null
+last_dream: 2026-04-14
 ---
 
 ## SPEC Debate Skill — Adversarial Iteration Before Build

@@ -5,7 +5,7 @@ PIP := pip3
 SHELL := /usr/bin/env bash
 
 help:
-	@echo "NEUTRON-EVO-OS v4.1.0 Makefile"
+	@echo "NEUTRON-EVO-OS v4.3.2 Makefile"
 	@echo ""
 	@echo "  Install (use install.sh directly for more options):"
 	@echo "    make install-cli    bash install.sh cli"

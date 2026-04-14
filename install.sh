@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ─────────────────────────────────────────────────────────────────────────────
-# NEUTRON EVO OS — Installer v4.3.1
+# NEUTRON EVO OS — Installer v4.3.2
 # Cross-platform: macOS, Linux, WSL
 # Usage: curl -fsSL https://... | bash
 #    or: bash install.sh [--dir ~/.neutron-evo-os] [--skip-claude]
@@ -33,7 +33,7 @@ while [[ $# -gt 0 ]]; do
         --verbose)     VERBOSE=1; set -x; shift ;;
         --help|-h)
             cat << 'USAGE'
-NEUTRON EVO OS Installer v4.3.1
+NEUTRON EVO OS Installer v4.3.2
 
 Usage: install.sh [options]
   --dir DIR             Install to DIR (default: ~/.neutron-evo-os)
@@ -62,7 +62,7 @@ cat << 'BANNER'
   ██║ ╚████║███████╗██╔╝ ██╗╚██████╔╝███████║
   ╚═╝  ╚═══╝╚══════╝╚═╝  ╚═╝ ╚═════╝ ╚══════╝
   ██╗      ╔════════════════════════════╗
-  ██║      ║  EVO OS — Installer v4.3.1 ║
+  ██║      ║  EVO OS — Installer v4.3.2 ║
   ╚═══════╝                                ╚══════════════╝
 
 BANNER
@@ -162,7 +162,7 @@ else
         warn "Removing existing installation..."
         rm -rf "$INSTALL_DIR"
     fi
-    git clone https://github.com/your-username/neutron-evo-os.git "$INSTALL_DIR" --depth=1 2>/dev/null || {
+    git clone https://github.com/adamwang99/NEUTRON-EVO-OS.git "$INSTALL_DIR" --depth=1 2>/dev/null || {
         error "Failed to clone. Check git remote."
         exit 1
     }
@@ -291,7 +291,7 @@ if "env" not in _mcp_config:
 if not settings.get("mcpServers", {}).get("neutron-evo-os", {}).get("env", {}).get("NEUTRON_ROOT"):
     _mcp_config["env"].setdefault("NEUTRON_ROOT", install_dir)
 
-settings.setdefault("mcpServers", {})["neutron-evo-os"] = _mcp_config
+settings.setdefault("mcpServers", {}).setdefault("neutron-evo-os", {}).update(_mcp_config)
 
 os.makedirs(os.path.dirname(settings_file), exist_ok=True)
 with open(settings_file, "w") as f:
@@ -376,7 +376,7 @@ fi
 section "Installation Complete ✓"
 
 echo ""
-success "NEUTRON EVO OS v4.3.1 installed to: $INSTALL_DIR"
+success "NEUTRON EVO OS v4.3.2 installed to: $INSTALL_DIR"
 echo ""
 echo "  Quick start:"
 echo "    source ~/.bashrc  # or open new terminal"

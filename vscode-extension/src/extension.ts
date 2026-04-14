@@ -56,7 +56,7 @@ cd ~/.neutron-evo-os && ./install-global.sh
 See: https://github.com/adamwang99/NEUTRON-EVO-OS
 
 ---
-*Powered by NEUTRON EVO OS v4.1.0*
+*Powered by NEUTRON EVO OS v4.3.2*
 `,
 
 	'SOUL.md': `# SOUL.md - NEUTRON EVO OS Identity

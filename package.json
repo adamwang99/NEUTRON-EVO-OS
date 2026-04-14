@@ -1,6 +1,6 @@
 {
   "name": "neutron-evo-os",
-  "version": "4.0.0",
+  "version": "4.3.2",
   "main": "main.js",
   "description": "NEUTRON EVO OS - Sovereign Intelligence Operating System: Memory Stack, Skill Router, Dream Cycle",
   "scripts": {

@@ -4,7 +4,7 @@ type: core
 version: 0.1.0
 CI: 50
 dependencies: [context, workflow]
-last_dream: null
+last_dream: 2026-04-14
 ---
 
 ## UI Library Router Skill

@@ -51,7 +51,7 @@ class JSONRPCResponse(BaseModel):
 def create_app() -> FastAPI:
     app = FastAPI(
         title="NEUTRON EVO OS — MCP HTTP Server",
-        version="4.3.1",
+        version="4.3.2",
         description="Model Context Protocol server over HTTP with API key auth",
     )
 
@@ -71,7 +71,7 @@ def create_app() -> FastAPI:
     @app.get("/health")
     async def health():
         """Liveness probe."""
-        return {"status": "ok", "version": "4.3.1", "server": "NEUTRON-EVO-OS"}
+        return {"status": "ok", "version": "4.3.2", "server": "NEUTRON-EVO-OS"}
 
     # ── Ready check ───────────────────────────────────────────────────────────
     @app.get("/ready")
@@ -150,9 +150,11 @@ def create_app() -> FastAPI:
         headers = {"x-neutron-api-key": x_neutron_api_key or ""}
         is_auth, api_key, err = auth.authenticate(headers)
         if not is_auth:
+            _rpc_id = body.get("id")
+            safe_id = _rpc_id if isinstance(_rpc_id, (str, int, type(None))) else None
             return JSONResponse(
                 status_code=401,
-                content={"jsonrpc": "2.0", "id": body.get("id"), "error": {"code": -32603, "message": err}},
+                content={"jsonrpc": "2.0", "id": safe_id, "error": {"code": -32603, "message": err}},
             )
 
         # Set per-request NEUTRON_ROOT via contextvar only — NOT os.environ.
@@ -179,7 +181,7 @@ def create_app() -> FastAPI:
                 content={
                     "jsonrpc": "2.0",
                     "id": body.get("id"),
-                    "error": {"code": -32603, "message": f"Internal error: {e}"},
+                    "error": {"code": -32603, "message": "Internal error"},
                 }
             )
 
@@ -195,7 +197,7 @@ def create_app() -> FastAPI:
         if not is_auth:
             return JSONResponse(
                 status_code=401,
-                content=[{"jsonrpc": "2.0", "id": None, "error": {"code": -32603, "message": err}}],
+                content=[{"jsonrpc": "2.0", "id": None, "error": {"code": -32603, "message": "Unauthorized"}}],
             )
 
         # Set per-request NEUTRON_ROOT via ContextVar only — no os.environ mutation

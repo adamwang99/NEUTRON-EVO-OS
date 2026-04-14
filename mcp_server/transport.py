@@ -54,7 +54,7 @@ def handle_request(req: dict) -> dict | None:
             "result": {
                 "protocolVersion": "2024-11-05",
                 "capabilities": {"tools": {}, "resources": {}, "prompts": {}},
-                "serverInfo": {"name": "NEUTRON-EVO-OS", "version": "4.1.0"},
+                "serverInfo": {"name": "NEUTRON-EVO-OS", "version": "4.3.2"},
             },
         }
 
